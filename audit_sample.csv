@@ -1,0 +1,21 @@
+diagnosis_text,assigned_code,patient_id
+Paciente que acude tras traumatismo craneoencefálico con périda de consciencia en el contexto de intoxicación etílica tras caída. Además refiere cefalea y pérdida de control de esfínteres (orina),S06.1X9D,PAT001
+Infarto Agudo de Miocardio anterior,I21.02,PAT002
+Hipertensión Arterial esencial,I10,PAT003
+Neumonía adquirida en comunidad,J18.9,PAT004
+Insuficiencia cardíaca congestiva,I50.9,PAT005
+Enfermedad Pulmonar Obstructiva Crónica,J44.9,PAT006
+Accidente cerebrovascular isquémico,I63.9,PAT007
+Asma crónica,J45.9,PAT008
+Enfermedad renal crónica estadio 3,N18.3,PAT009
+Síndrome de piernas inquietas,G25.81,PAT010
+Gastritis aguda erosiva,K29.0,PAT011
+Apendicitis aguda no complicada,K35.80,PAT012
+Cálculo biliar sin colecistitis,K80.9,PAT013
+Hipotiroidismo primario,E03.9,PAT014
+Síndrome depresivo recurrente,F33.9,PAT015
+Osteoartrosis primaria de cadera,M16.0,PAT016
+Fimosis del prepucio,N47.0,PAT017
+Conjuntivitis alérgica,H10.45,PAT018
+Otitis media aguda,H66.0,PAT019
+Dispepsia funcional,K30,PAT020

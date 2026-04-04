@@ -1,0 +1,14 @@
+# FastAPI y servidor
+fastapi==0.115.0
+uvicorn[standard]==0.30.0
+pydantic==2.8.0
+
+# HTTP Client
+requests==2.31.0
+
+# Utilities
+python-dotenv==1.0.0
+
+# Google Cloud - Vertex AI
+google-cloud-aiplatform>=1.42.0
+google-auth>=2.26.0

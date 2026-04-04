@@ -1,0 +1,215 @@
+services:
+  # ==========================================
+  # MICROSERVICIOS PRINCIPALES
+  # ==========================================
+
+  # Servicio de Autenticación
+  auth-service:
+    build:
+      context: ./auth-service
+      dockerfile: Dockerfile
+    container_name: cie10-auth
+    ports:
+      - "8004:8004"
+    environment:
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+      - JWT_EXPIRATION_HOURS=${JWT_EXPIRATION_HOURS}
+      - AUTH_SERVICE_PORT=8004
+    networks:
+      - clinic-classifier-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8004/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Servicio de Auditoría
+  audit-service:
+    build:
+      context: ./audit-service
+      dockerfile: Dockerfile
+    container_name: cie10-audit
+    ports:
+      - "8005:8005"
+    environment:
+      - AUDIT_SERVICE_PORT=8005
+      - API_GATEWAY_URL=http://api-gateway:3000
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - clinic-classifier-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8005/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # ==========================================
+  # SERVICIOS DE PROCESAMIENTO
+  # ==========================================
+
+  # Servicio de Procesamiento de Queries con LLM (usando Vertex AI)
+  llm-query-processor:
+    build:
+      context: ./llm-query-processor-service
+      dockerfile: Dockerfile
+    container_name: cie10-llm-processor
+    ports:
+      - "8003:8003"
+    environment:
+      - LOCATION=${LOCATION}
+    volumes:
+      - ./gen-lang-client-0891347722-c6ddf02408c1.json:/app/credentials/gen-lang-client-0891347722-c6ddf02408c1.json:ro
+    networks:
+      - clinic-classifier-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8003/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Servicio de Embeddings (Bi-Encoder)
+  embeddings:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+    container_name: cie10-embeddings
+    ports:
+      - "8002:8002"
+    volumes:
+      - embeddings-data:/data
+    command: --model-id intfloat/multilingual-e5-base --port 8002
+    networks:
+      - clinic-classifier-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8002/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
+  # Servicio de Reranker (Cross-Encoder)
+  reranker:
+    image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
+    container_name: cie10-reranker
+    ports:
+      - "8001:8001"
+    environment:
+      - HF_HOME=/root/.cache/huggingface
+    volumes:
+      - huggingface-cache:/root/.cache/huggingface
+    command: --model-id cross-encoder/ms-marco-MiniLM-L-12-v2 --port 8001
+    networks:
+      - clinic-classifier-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8001/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
+  # Backend - Clasificador CIE-10
+  backend:
+    build:
+      context: ./backend-service/cie_classifier
+      dockerfile: Dockerfile
+    container_name: cie10-backend
+    ports:
+      - "8000:8000"
+    environment:
+      - EMBEDDING_URL=http://embeddings:8002/embed
+      - RERANKER_URL=http://reranker:8001/rerank
+      - LLM_QUERY_PROCESSOR_URL=http://llm-query-processor:8003
+    volumes:
+      - ./backend-service/cie10_qdrant:/app/../cie10_qdrant
+    depends_on:
+      embeddings:
+        condition: service_healthy
+      reranker:
+        condition: service_healthy
+    networks:
+      - clinic-classifier-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./api-gateway-service
+      dockerfile: Dockerfile
+    container_name: cie10-gateway
+    ports:
+      - "3000:3000"
+    environment:
+      - BACKEND_URL=http://backend:8000
+      - LLM_QUERY_PROCESSOR_URL=http://llm-query-processor:8003
+      - AUTH_SERVICE_URL=http://auth-service:8004
+      - AUDIT_SERVICE_URL=http://audit-service:8005
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+    depends_on:
+      backend:
+        condition: service_healthy
+      llm-query-processor:
+        condition: service_healthy
+      auth-service:
+        condition: service_healthy
+    networks:
+      - clinic-classifier-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:3000/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 300s
+
+  # Frontend - Aplicación Web
+  app:
+    build:
+      context: ./app
+      dockerfile: Dockerfile
+      args:
+        - API_GATEWAY_URL=http://localhost:3000
+    container_name: cie10-frontend
+    ports:
+      - "80:80"
+    depends_on:
+      api-gateway:
+        condition: service_healthy
+    networks:
+      - clinic-classifier-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget --no-verbose --tries=1 --spider http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+networks:
+  clinic-classifier-network:
+    driver: bridge
+
+volumes:
+  embeddings-data:
+  huggingface-cache:
+  ollama-data:
+  qdrant-storage:
+  qdrant-snapshots:

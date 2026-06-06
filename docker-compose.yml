@@ -16,6 +16,8 @@ services:
       - JWT_ALGORITHM=${JWT_ALGORITHM}
       - JWT_EXPIRATION_HOURS=${JWT_EXPIRATION_HOURS}
       - AUTH_SERVICE_PORT=8004
+      - MONGO_CONNECTION=${MONGO_CONNECTION}
+      - LOG_SERVICE_URL=http://log-service:8006
     networks:
       - clinic-classifier-network
     restart: unless-stopped
@@ -49,6 +51,56 @@ services:
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8005/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Servicio de Logs
+  log-service:
+    build:
+      context: ./log-service
+      dockerfile: Dockerfile
+    container_name: cie10-logs
+    ports:
+      - "8006:8006"
+    environment:
+      - LOG_SERVICE_PORT=8006
+      - MONGO_CONNECTION=${MONGO_CONNECTION}
+    depends_on:
+      auth-service:
+        condition: service_healthy
+    networks:
+      - clinic-classifier-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8006/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
+  # Servicio de Historial
+  history-service:
+    build:
+      context: ./history-service
+      dockerfile: Dockerfile
+    container_name: cie10-history
+    ports:
+      - "8007:8007"
+    environment:
+      - HISTORY_SERVICE_PORT=8007
+      - MONGO_CONNECTION=${MONGO_CONNECTION}
+      - JWT_SECRET=${JWT_SECRET}
+      - JWT_ALGORITHM=${JWT_ALGORITHM}
+    depends_on:
+      auth-service:
+        condition: service_healthy
+    networks:
+      - clinic-classifier-network
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8007/health || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
@@ -132,6 +184,7 @@ services:
       - EMBEDDING_URL=http://embeddings:8002/embed
       - RERANKER_URL=http://reranker:8001/rerank
       - LLM_QUERY_PROCESSOR_URL=http://llm-query-processor:8003
+      - LOG_SERVICE_URL=http://log-service:8006
     volumes:
       - ./backend-service/cie10_qdrant:/app/../cie10_qdrant
     depends_on:
@@ -162,14 +215,21 @@ services:
       - LLM_QUERY_PROCESSOR_URL=http://llm-query-processor:8003
       - AUTH_SERVICE_URL=http://auth-service:8004
       - AUDIT_SERVICE_URL=http://audit-service:8005
+      - LOG_SERVICE_URL=http://log-service:8006
+      - HISTORY_SERVICE_URL=http://history-service:8007
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGORITHM=${JWT_ALGORITHM}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost,http://localhost:3000}
     depends_on:
       backend:
         condition: service_healthy
       llm-query-processor:
         condition: service_healthy
       auth-service:
+        condition: service_healthy
+      log-service:
+        condition: service_healthy
+      history-service:
         condition: service_healthy
     networks:
       - clinic-classifier-network

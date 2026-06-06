@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Request, Depends
+from fastapi import FastAPI, HTTPException, Request, Depends, Body, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, EmailStr
@@ -7,19 +7,67 @@ import httpx
 import uvicorn
 import os
 import jwt
+import json
 from datetime import datetime, timedelta, timezone
 from functools import lru_cache
+import asyncio
+import logging
 
 # ==========================================
 # CONFIGURACIÓN
 # ==========================================
+# Configurar logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+
+def _require_env(name: str) -> str:
+    """Obtiene una variable de entorno obligatoria o aborta el arranque.
+
+    Evita secretos por defecto incrustados en el código fuente forzando a definir el valor en el entorno.
+    """
+    value = os.getenv(name)
+    if not value:
+        raise RuntimeError(
+            f"La variable de entorno '{name}' es obligatoria y no está definida. "
+            "Defínela en el fichero .env antes de iniciar el servicio."
+        )
+    return value
+
+
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 LLM_QUERY_PROCESSOR_URL = os.getenv("LLM_QUERY_PROCESSOR_URL", "http://localhost:8003")
 AUTH_SERVICE_URL = os.getenv("AUTH_SERVICE_URL", "http://localhost:8004")
 AUDIT_SERVICE_URL = os.getenv("AUDIT_SERVICE_URL", "http://localhost:8005")
-JWT_SECRET = os.getenv("JWT_SECRET", "your-secret-key-change-in-production")
+LOG_SERVICE_URL = os.getenv("LOG_SERVICE_URL", "http://localhost:8006")
+HISTORY_SERVICE_URL = os.getenv("HISTORY_SERVICE_URL", "http://localhost:8007")
+JWT_SECRET = _require_env("JWT_SECRET")
 JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
-JWT_EXPIRATION_HOURS = int(os.getenv("JWT_EXPIRATION_HOURS", 24))
+JWT_EXPIRATION_HOURS = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
+# En contenedores debe ser 0.0.0.0 para aceptar conexiones del resto de
+# servicios de la red interna de Docker; el acceso queda acotado por la red
+# bridge aislada y por los puertos publicados en docker-compose.
+HOST = os.getenv("HOST", "0.0.0.0")
+# Orígenes permitidos para CORS (configurables por entorno). Por defecto solo
+# el frontend local; nunca "*" junto con cookies/credenciales.
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS", "http://localhost,http://localhost:3000"
+    ).split(",")
+    if origin.strip()
+]
+# Mensaje genérico para respuestas 5xx: evita filtrar detalles internos
+# (trazas, rutas, mensajes de excepción) al cliente.
+INTERNAL_ERROR_DETAIL = "Internal server error"
+# Mensajes por defecto al propagar errores del procesador de consultas LLM.
+LLM_PROCESSOR_ERROR_DETAIL = "LLM processor error"
+LLM_PROCESSOR_TIMEOUT_DETAIL = "LLM processor request timeout"
+LLM_PROCESSOR_CONNECT_ERROR_DETAIL = "Cannot connect to LLM processor service"
+# Mensajes reutilizados en los endpoints administrativos delegados al auth-service.
+AUTH_HEADER_MISSING_DETAIL = "Authorization header missing"
+ADMIN_ACCESS_REQUIRED_DETAIL = "Admin access required"
+AUTH_SERVICE_UNAVAILABLE_DETAIL = "Auth service unavailable"
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -29,16 +77,18 @@ class SearchRequest(BaseModel):
     top_k: Optional[int] = 5
 
 class LoginRequest(BaseModel):
-    email: str
+    username: str
     password: str
 
 class LoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     expires_in: int
+    user_data: dict
+    session_id: Optional[str] = None
 
 class TokenPayload(BaseModel):
-    email: str
+    username: str
     exp: datetime
 
 class AuditRecordRequest(BaseModel):
@@ -54,10 +104,10 @@ class AuditBatchRequest(BaseModel):
 # ==========================================
 # FUNCIONES DE AUTENTICACIÓN
 # ==========================================
-def create_token(email: str) -> str:
+def create_token(username: str) -> str:
     """Crea un JWT token para el usuario autenticado"""
     payload = {
-        "email": email,
+        "username": username,
         "exp": datetime.now(timezone.utc) + timedelta(hours=JWT_EXPIRATION_HOURS),
         "iat": datetime.now(timezone.utc)
     }
@@ -85,12 +135,105 @@ def get_current_user(request: Request) -> str:
         if scheme.lower() != "bearer":
             raise HTTPException(status_code=401, detail="Invalid auth scheme")
         payload = verify_token(token)
-        email = payload.get("email")
-        if not email:
+        username = payload.get("username")
+        if not username:
             raise HTTPException(status_code=401, detail="Invalid token payload")
-        return email
+        return username
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid authorization header")
+
+# ==========================================
+# FUNCIONES DE LOGGING
+# ==========================================
+
+async def log_search(
+    session_id: str,
+    user_id: str,
+    query: str,
+    top_k: Optional[int] = None,
+    results_count: int = 0,
+    ip_address: Optional[str] = None,
+    status: str = "success",
+    error_message: Optional[str] = None,
+    details: Optional[dict] = None
+):
+    """
+    Registra una búsqueda en el servicio de logs de forma no-bloqueante.
+    """
+    try:
+        if not LOG_SERVICE_URL:
+            logger.warning("LOG_SERVICE_URL no configurada")
+            return
+        
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            await client.post(
+                f"{LOG_SERVICE_URL}/searches",
+                json={
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "query": query,
+                    "top_k": top_k,
+                    "results_count": results_count,
+                    "ip_address": ip_address,
+                    "description": "Search query performed",
+                    "status": status,
+                    "error_message": error_message,
+                    "details": details
+                },
+                timeout=2.0
+            )
+    except asyncio.TimeoutError:
+        logger.warning("Timeout al registrar búsqueda en el servicio de logs")
+    except Exception as e:
+        logger.warning(f"Error al registrar búsqueda: {e}")
+
+async def log_audit(
+    session_id: str,
+    user_id: str,
+    records_count: int,
+    algorithm: Optional[str] = None,
+    top_k: Optional[int] = None,
+    ip_address: Optional[str] = None,
+    status: str = "success",
+    error_message: Optional[str] = None,
+    details: Optional[dict] = None
+):
+    """
+    Registra una auditoría en el servicio de logs de forma no-bloqueante.
+    """
+    try:
+        if not LOG_SERVICE_URL:
+            logger.warning("LOG_SERVICE_URL no configurada")
+            return
+        
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            await client.post(
+                f"{LOG_SERVICE_URL}/audits",
+                json={
+                    "session_id": session_id,
+                    "user_id": user_id,
+                    "records_count": records_count,
+                    "algorithm": algorithm,
+                    "top_k": top_k,
+                    "ip_address": ip_address,
+                    "description": f"Audit with {records_count} records",
+                    "status": status,
+                    "error_message": error_message,
+                    "details": details
+                },
+                timeout=2.0
+            )
+    except asyncio.TimeoutError:
+        logger.warning("Timeout al registrar auditoría en el servicio de logs")
+    except Exception as e:
+        logger.warning(f"Error al registrar auditoría: {e}")
+
+def get_client_ip(request: Request) -> str:
+    """Obtiene la IP del cliente desde el request"""
+    if request.client:
+        return request.client.host
+    return "unknown"
+
 # INICIALIZACIÓN FASTAPI
 # ==========================================
 app = FastAPI(
@@ -99,10 +242,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configuración CORS
+# Configuración CORS (orígenes restringidos y configurables; nunca "*" con credenciales)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -151,57 +294,109 @@ async def health_check():
         )
 
 @app.post("/api/login", response_model=LoginResponse)
-async def login(request: LoginRequest):
+async def login(request: LoginRequest, req: Request):
     """
     Endpoint de login para usuarios - DELEGADO AL AUTH SERVICE
     
     Args:
-        request: Credenciales (email y password)
+        request: Credenciales (username y password)
+        req: Request object para obtener IP
     
     Returns:
-        JWT token con información de expiración
+        JWT token con información de expiración y datos del usuario
     """
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(
                 f"{AUTH_SERVICE_URL}/auth/login",
                 json={
-                    "email": request.email,
+                    "username": request.username,
                     "password": request.password
                 }
             )
         
         if response.status_code == 401:
-            raise HTTPException(status_code=401, detail="Invalid credentials")
+            error_data = response.json()
+            detail = error_data.get("detail", "Credenciales inválidas")
+            # Asegurar que el mensaje sea legible sin códigos HTTP
+            if detail.startswith("401:"):
+                detail = detail[4:].strip()
+            raise HTTPException(status_code=401, detail=detail)
         elif response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail="Login failed")
+            error_data = response.json()
+            detail = error_data.get("detail", "Login fallido")
+            # Asegurar que el mensaje sea legible sin códigos HTTP
+            if detail.startswith(f"{response.status_code}:"):
+                detail = detail.split(":", 1)[1].strip()
+            raise HTTPException(status_code=response.status_code, detail=detail)
         
-        return response.json()
+        login_response = response.json()
+        
+        # Crear sesión en el servicio de logs de forma asíncrona
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                session_response = await client.post(
+                    f"{LOG_SERVICE_URL}/sessions/create",
+                    json={
+                        "user_id": login_response.get("user_data", {}).get("user_id"),
+                        "ip_address": get_client_ip(req),
+                        "user_agent": req.headers.get("user-agent")
+                    },
+                    timeout=2.0
+                )
+                if session_response.status_code == 200:
+                    session_data = session_response.json()
+                    # Agregar session_id a la respuesta de login
+                    login_response["session_id"] = session_data.get("session_id")
+        except Exception as e:
+            logger.warning(f"Error creating log session: {e}")
+            # No fallar el login si hay error en logs
+            login_response["session_id"] = "unknown"
+        
+        return login_response
     
     except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Auth service unavailable")
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=503, detail="Servicio de autenticación no disponible")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=500, detail="Error en la autenticación")
 
 @app.post("/api/logout")
-async def logout(user_email: str = Depends(get_current_user)):
+async def logout(
+    req: Request,
+    user_username: str = Depends(get_current_user),
+    session_id: Optional[str] = Query(None)
+):
     """
     Endpoint de logout para usuarios
     
     Returns:
         Mensaje de confirmación
     """
-    return {"message": f"User {user_email} logged out successfully"}
+    # Cerrar la sesión en el servicio de logs de forma asíncrona
+    if session_id:
+        try:
+            async with httpx.AsyncClient(timeout=2.0) as client:
+                await client.post(
+                    f"{LOG_SERVICE_URL}/sessions/close",
+                    json={"session_id": session_id},
+                    timeout=2.0
+                )
+        except Exception as e:
+            logger.warning(f"Error closing log session: {e}")
+    
+    return {"message": f"User {user_username} logged out successfully"}
 
 @app.get("/api/verify-token")
-async def verify_token_endpoint(user_email: str = Depends(get_current_user)):
+async def verify_token_endpoint(user_username: str = Depends(get_current_user)):
     """
     Verifica si el token actual es válido
     
     Returns:
         Información del usuario autenticado
     """
-    return {"email": user_email, "status": "valid"}
+    return {"username": user_username, "status": "valid"}
 
 @app.post("/auth/verify")
 async def auth_verify(request: dict):
@@ -225,7 +420,7 @@ async def auth_verify(request: dict):
         payload = verify_token(token)
         return {
             "valid": True,
-            "email": payload.get("email"),
+            "username": payload.get("username"),
             "exp": payload.get("exp")
         }
     except HTTPException:
@@ -236,15 +431,21 @@ async def auth_verify(request: dict):
 
 @app.post("/api/audit/batch")
 async def audit_batch(
+    req: Request,
     request: AuditBatchRequest,
-    user_email: str = Depends(get_current_user)
+    user_username: str = Depends(get_current_user),
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None
 ):
     """
     Endpoint para auditar un lote de diagnósticos - DELEGADO AL AUDIT SERVICE
     
     Args:
         request: Lote de registros a auditar
-        user_email: Email del usuario autenticado (inyectado por dependency)
+        user_username: Username del usuario autenticado (inyectado por dependency)
+        session_id: ID de sesión (opcional, para logging)
+        user_id: ID del usuario (opcional, para logging)
+        req: Request object para obtener IP
     
     Returns:
         Reporte de auditoría con hallazgos
@@ -256,8 +457,13 @@ async def audit_batch(
         )
     
     try:
+        # Obtener session_id y user_id del header si no están en params
+        if not session_id:
+            session_id = req.headers.get("x-session-id")
+        if not user_id:
+            user_id = req.headers.get("x-user-id")
         # Obtener token del auditor para pasar al audit service
-        auth_header = f"Bearer {create_token(user_email)}"
+        auth_header = f"Bearer {create_token(user_username)}"
         
         # Enviar solicitud al audit-service
         async with httpx.AsyncClient(timeout=60.0) as client:
@@ -279,7 +485,26 @@ async def audit_batch(
             
             result = response.json()
             # Agregar información del usuario al reporte
-            result["user_email"] = user_email
+            result["user_username"] = user_username
+            
+            # Registrar la auditoría de forma asincrónica
+            if session_id and user_id:
+                asyncio.create_task(
+                    log_audit(
+                        session_id=session_id,
+                        user_id=user_id,
+                        records_count=len(request.records),
+                        algorithm=request.algorithm,
+                        top_k=request.top_k,
+                        ip_address=get_client_ip(req) if req else "unknown",
+                        status="success",
+                        details={
+                            "records_count": len(request.records),
+                            "top_k": request.top_k,
+                            "algorithm": request.algorithm
+                        }
+                    )
+                )
             
             return result
             
@@ -296,22 +521,29 @@ async def audit_batch(
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Error en el proxy de auditoría: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"Audit error: {str(e)}"
+            detail=INTERNAL_ERROR_DETAIL
         )
 
 @app.post("/api/audit/batch-stream")
 async def audit_batch_stream(
+    req: Request,
     request: AuditBatchRequest,
-    user_email: str = Depends(get_current_user)
+    user_username: str = Depends(get_current_user),
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None
 ):
     """
     Endpoint para auditar un lote de diagnósticos con streaming de progreso - DELEGADO AL AUDIT SERVICE
     
     Args:
         request: Lote de registros a auditar
-        user_email: Email del auditor autenticado (inyectado por dependency)
+        user_username: Username del auditor autenticado (inyectado por dependency)
+        session_id: ID de sesión (opcional, para logging)
+        user_id: ID del usuario (opcional, para logging)
+        req: Request object para obtener headers e IP
     
     Yields:
         Eventos SSE con progreso y resultado final
@@ -322,10 +554,20 @@ async def audit_batch_stream(
             detail="At least one record is required"
         )
     
+    # Obtener session_id y user_id del header si no están en params
+    if not session_id:
+        session_id = req.headers.get("x-session-id")
+    if not user_id:
+        user_id = req.headers.get("x-user-id")
+    
+    logger.info("Inicio de auditoría en streaming con %d registros", len(request.records))
+    
     async def stream_audit():
+        audit_completed = False
+        audit_result = None
         try:
             # Obtener token del auditor para pasar al audit service
-            auth_header = f"Bearer {create_token(user_email)}"
+            auth_header = f"Bearer {create_token(user_username)}"
             
             # Enviar solicitud al audit-service
             async with httpx.AsyncClient(timeout=300.0) as client:
@@ -347,32 +589,93 @@ async def audit_batch_stream(
                     async for line in response.aiter_lines():
                         if line.startswith("data: "):
                             yield line + "\n\n"
+                            
+                            # Detectar cuando se completa la auditoría y extraer resultado
+                            if '"type": "complete"' in line or '"type":"complete"' in line:
+                                audit_completed = True
+                                # Extraer el resultado del JSON
+                                try:
+                                    data_str = line.replace("data: ", "")
+                                    event_data = json.loads(data_str)
+                                    audit_result = event_data.get("result", {})
+                                except json.JSONDecodeError:
+                                    logger.warning("No se pudo parsear el evento de finalización de auditoría")
+            
+            # Registrar la auditoría en el log-service si se completó exitosamente
+            if audit_completed and session_id and user_id and audit_result:
+                logger.info("Registrando auditoría con %d registros", len(request.records))
+                
+                # Preparar detalles completos de la auditoría
+                details = {
+                    "audit_id": audit_result.get("audit_id"),
+                    "timestamp": audit_result.get("timestamp"),
+                    "total_records": audit_result.get("total_records"),
+                    "total_correct": audit_result.get("total_correct"),
+                    "total_partial_match": audit_result.get("total_partial_match"),
+                    "total_mismatch": audit_result.get("total_mismatch"),
+                    "conformity_percentage": audit_result.get("conformity_percentage"),
+                    "top_k": audit_result.get("top_k"),
+                    "algorithm": request.algorithm or "algoritmo1",
+                    "findings": audit_result.get("findings", [])
+                }
+                
+                asyncio.create_task(
+                    log_audit(
+                        session_id=session_id,
+                        user_id=user_id,
+                        records_count=len(request.records),
+                        algorithm=request.algorithm or "algoritmo1",
+                        top_k=request.top_k or 5,
+                        ip_address=get_client_ip(req) if req else "unknown",
+                        status="success",
+                        details=details
+                    )
+                )
                         
         except httpx.TimeoutException:
             yield "data: {\"type\": \"error\", \"message\": \"Request timeout\"}\n\n"
         except httpx.ConnectError:
             yield "data: {\"type\": \"error\", \"message\": \"Cannot connect to audit service\"}\n\n"
         except Exception as e:
-            yield f"data: {{\"type\": \"error\", \"message\": \"{str(e)}\"}}\n\n"
+            logger.exception("Error durante el streaming de auditoría: %s", e)
+            yield "data: {\"type\": \"error\", \"message\": \"Internal server error\"}\n\n"
     
     return StreamingResponse(stream_audit(), media_type="text/event-stream")
 
 @app.post("/api/search")
-async def search_diagnosis(request: SearchRequest):
+async def search_diagnosis(
+    req: Request,
+    request: SearchRequest,
+    session_id: Optional[str] = None,
+    user_id: Optional[str] = None
+):
     """
     Proxy para el endpoint de búsqueda del backend
     
     Args:
         request: Objeto con la query y top_k opcional
+        session_id: ID de sesión (opcional, para logging)
+        user_id: ID del usuario (opcional, para logging)
+        req: Request object para obtener IP
     
     Returns:
         Resultados de búsqueda del backend
     """
     try:
+        # Obtener session_id y user_id del header si no están en params
+        if not session_id:
+            session_id = req.headers.get("x-session-id")
+        if not user_id:
+            user_id = req.headers.get("x-user-id")
+        
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{BACKEND_URL}/search",
-                json=request.dict()
+                json=request.dict(),
+                headers={
+                    "x-session-id": session_id or "",
+                    "x-user-id": user_id or ""
+                }
             )
             
             if response.status_code != 200:
@@ -381,7 +684,12 @@ async def search_diagnosis(request: SearchRequest):
                     detail=response.json().get("detail", "Backend error")
                 )
             
-            return response.json()
+            result = response.json()
+            
+            # Nota: El backend ya registra las búsquedas en el log-service
+            # No duplicamos el registro aquí
+            
+            return result
             
     except httpx.TimeoutException:
         raise HTTPException(
@@ -396,9 +704,10 @@ async def search_diagnosis(request: SearchRequest):
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Error en el proxy de búsqueda: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"Gateway error: {str(e)}"
+            detail=INTERNAL_ERROR_DETAIL
         )
 
 # Endpoint alternativo para compatibilidad
@@ -410,138 +719,335 @@ async def search_diagnosis_alt(request: SearchRequest):
 # ==========================================
 # ENDPOINTS DEL PROCESADOR DE QUERIES LLM
 # ==========================================
-@app.post("/api/analyze-query")
-async def analyze_query(request: SearchRequest):
+async def _proxy_llm_query(endpoint: str, query: str, timeout_seconds: float, log_label: str):
     """
-    Analiza una consulta para extraer síntomas y hallazgos clave usando LLM
-    
+    Reenvía una consulta al procesador LLM y normaliza los errores de transporte.
+
     Args:
-        request: Objeto con la query
-    
+        endpoint: Ruta del procesador LLM (p. ej. "/analyze").
+        query: Texto de la consulta a procesar.
+        timeout_seconds: Tiempo máximo de espera en segundos.
+        log_label: Etiqueta del endpoint para los mensajes de log.
+
     Returns:
-        Análisis de la consulta
+        Respuesta JSON del procesador LLM.
     """
     try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
             response = await client.post(
-                f"{LLM_QUERY_PROCESSOR_URL}/analyze",
-                json={"query": request.query}
+                f"{LLM_QUERY_PROCESSOR_URL}{endpoint}",
+                json={"query": query}
             )
-            
+
             if response.status_code != 200:
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=response.json().get("detail", "LLM processor error")
+                    detail=response.json().get("detail", LLM_PROCESSOR_ERROR_DETAIL)
                 )
-            
+
             return response.json()
-            
+
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=504,
-            detail="LLM processor request timeout"
+            detail=LLM_PROCESSOR_TIMEOUT_DETAIL
         )
     except httpx.ConnectError:
         raise HTTPException(
             status_code=503,
-            detail="Cannot connect to LLM processor service"
+            detail=LLM_PROCESSOR_CONNECT_ERROR_DETAIL
         )
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Error en el proxy %s: %s", log_label, e)
         raise HTTPException(
             status_code=500,
-            detail=f"Gateway error: {str(e)}"
+            detail=INTERNAL_ERROR_DETAIL
         )
+
+
+@app.post("/api/analyze-query")
+async def analyze_query(request: SearchRequest):
+    """
+    Analiza una consulta para extraer síntomas y hallazgos clave usando LLM
+
+    Args:
+        request: Objeto con la query
+
+    Returns:
+        Análisis de la consulta
+    """
+    return await _proxy_llm_query("/analyze", request.query, 60.0, "analyze-query")
+
 
 @app.post("/api/correct-query")
 async def correct_query(request: SearchRequest):
     """
     Corrige y normaliza una consulta
-    
+
     Args:
         request: Objeto con la query
-    
+
     Returns:
         Consulta corregida y normalizada
     """
-    try:
-        async with httpx.AsyncClient(timeout=60.0) as client:
-            response = await client.post(
-                f"{LLM_QUERY_PROCESSOR_URL}/correct",
-                json={"query": request.query}
-            )
-            
-            if response.status_code != 200:
-                raise HTTPException(
-                    status_code=response.status_code,
-                    detail=response.json().get("detail", "LLM processor error")
-                )
-            
-            return response.json()
-            
-    except httpx.TimeoutException:
-        raise HTTPException(
-            status_code=504,
-            detail="LLM processor request timeout"
-        )
-    except httpx.ConnectError:
-        raise HTTPException(
-            status_code=503,
-            detail="Cannot connect to LLM processor service"
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Gateway error: {str(e)}"
-        )
+    return await _proxy_llm_query("/correct", request.query, 60.0, "correct-query")
+
 
 @app.post("/api/process-query")
 async def process_query(request: SearchRequest):
     """
     Pipeline completo: Análisis + Corrección
-    
+
     Args:
         request: Objeto con la query
-    
+
     Returns:
         Consulta procesada completamente con análisis
     """
+    return await _proxy_llm_query("/process", request.query, 120.0, "process-query")
+
+@app.patch("/api/log/update-ai")
+async def update_ai_analysis(body: dict):
+    """
+    Actualiza los datos de análisis de IA en el log-service.
+    Se llama desde el frontend después de obtener el análisis de IA.
+    
+    Args:
+        body: Contiene session_id, query y ai_analysis
+    
+    Returns:
+        Confirma la actualización
+    """
     try:
-        async with httpx.AsyncClient(timeout=120.0) as client:
-            response = await client.post(
-                f"{LLM_QUERY_PROCESSOR_URL}/process",
-                json={"query": request.query}
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.patch(
+                f"{LOG_SERVICE_URL}/searches/update-ai",
+                json={
+                    "session_id": body.get("session_id"),
+                    "query": body.get("query"),
+                    "ai_analysis": body.get("ai_analysis")
+                }
+            )
+            
+            if response.status_code not in [200, 204]:
+                logger.warning(f"Log service AI update failed: {response.status_code}")
+                # No levantamos error, solo log warning
+                return {"status": "warning", "message": "AI analysis update failed"}
+            
+            return response.json()
+            
+    except httpx.TimeoutException:
+        logger.warning("Log service AI update timeout")
+        return {"status": "warning", "message": "Log service timeout"}
+    except httpx.ConnectError:
+        logger.warning("Cannot connect to log service")
+        return {"status": "warning", "message": "Cannot connect to log service"}
+    except Exception as e:
+        logger.warning(f"Gateway error updating AI analysis: {str(e)}")
+        return {"status": "warning", "message": str(e)}
+
+# ==========================================
+# ENDPOINTS DE ADMINISTRACIÓN
+# ==========================================
+
+async def _proxy_admin_request(
+    request: Request,
+    method: str,
+    path: str,
+    error_detail: str,
+    log_label: str,
+    body: Optional[dict] = None,
+    forward_session: bool = False,
+):
+    """
+    Reenvía una petición administrativa al auth-service preservando la
+    autorización del cliente y normalizando los errores comunes.
+
+    Args:
+        request: Request original del cliente (para extraer cabeceras).
+        method: Método HTTP a usar contra el auth-service.
+        path: Ruta del auth-service (p. ej. "/admin/users").
+        error_detail: Mensaje por defecto si el auth-service devuelve error.
+        log_label: Texto para el log en caso de error inesperado.
+        body: Cuerpo JSON a reenviar (opcional).
+        forward_session: Si se debe propagar la cabecera x-session-id.
+
+    Returns:
+        Respuesta JSON del auth-service.
+    """
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail=AUTH_HEADER_MISSING_DETAIL)
+
+    forward_headers = {"Authorization": auth_header}
+    if forward_session:
+        session_id = request.headers.get("x-session-id")
+        if session_id:
+            forward_headers["x-session-id"] = session_id
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.request(
+                method,
+                f"{AUTH_SERVICE_URL}{path}",
+                json=body,
+                headers=forward_headers,
+            )
+
+        if response.status_code == 403:
+            raise HTTPException(status_code=403, detail=ADMIN_ACCESS_REQUIRED_DETAIL)
+        if response.status_code != 200:
+            error_data = response.json()
+            raise HTTPException(
+                status_code=response.status_code,
+                detail=error_data.get("detail", error_detail),
+            )
+
+        return response.json()
+
+    except httpx.RequestError:
+        raise HTTPException(status_code=503, detail=AUTH_SERVICE_UNAVAILABLE_DETAIL)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("%s: %s", log_label, e)
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
+
+
+@app.get("/api/admin/users")
+async def admin_list_users(request: Request, user_username: str = Depends(get_current_user)):
+    """
+    Lista todos los usuarios (solo admin) - DELEGADO AL AUTH SERVICE
+    """
+    return await _proxy_admin_request(
+        request,
+        "GET",
+        "/admin/users",
+        error_detail="Error fetching users",
+        log_label="Error listando usuarios (admin)",
+    )
+
+@app.post("/api/admin/users")
+async def admin_create_user(request: Request, body: dict = Body(...), user_username: str = Depends(get_current_user)):
+    """
+    Crea un nuevo usuario (solo admin) - DELEGADO AL AUTH SERVICE
+    """
+    return await _proxy_admin_request(
+        request,
+        "POST",
+        "/admin/users",
+        error_detail="Error creating user",
+        log_label="Error creando usuario (admin)",
+        body=body,
+        forward_session=True,
+    )
+
+@app.put("/api/admin/users/{username}/role")
+async def admin_update_user_role(username: str, request: Request, body: dict = Body(...), user_username: str = Depends(get_current_user)):
+    """
+    Actualiza los roles de un usuario (solo admin) - DELEGADO AL AUTH SERVICE
+    """
+    return await _proxy_admin_request(
+        request,
+        "PUT",
+        f"/admin/users/{username}/role",
+        error_detail="Error updating user roles",
+        log_label="Error actualizando roles de usuario (admin)",
+        body=body,
+        forward_session=True,
+    )
+
+@app.put("/api/admin/users/{username}/password")
+async def admin_change_password(username: str, request: Request, body: dict = Body(...), user_username: str = Depends(get_current_user)):
+    """
+    Cambia la contraseña de un usuario (solo admin) - DELEGADO AL AUTH SERVICE
+    """
+    return await _proxy_admin_request(
+        request,
+        "PUT",
+        f"/admin/users/{username}/password",
+        error_detail="Error updating password",
+        log_label="Error actualizando contraseña de usuario (admin)",
+        body=body,
+        forward_session=True,
+    )
+
+@app.delete("/api/admin/users/{username}")
+async def admin_delete_user(username: str, request: Request, user_username: str = Depends(get_current_user)):
+    """
+    Elimina un usuario (solo admin) - DELEGADO AL AUTH SERVICE
+    """
+    return await _proxy_admin_request(
+        request,
+        "DELETE",
+        f"/admin/users/{username}",
+        error_detail="Error deleting user",
+        log_label="Error eliminando usuario (admin)",
+        forward_session=True,
+    )
+
+# ==========================================
+# ENDPOINTS DE HISTORIAL
+# ==========================================
+@app.get("/api/search-history")
+async def get_user_search_history(
+    request: Request,
+    user_username: str = Depends(get_current_user),
+    limit: int = 100
+):
+    """
+    Obtiene el historial de búsquedas del usuario actual,
+    segmentado temporalmente - DELEGADO AL HISTORY SERVICE
+    
+    Args:
+        request: Request object
+        user_username: Username del usuario autenticado
+        limit: Límite de búsquedas a retornar
+    
+    Returns:
+        Historial segmentado de búsquedas
+    """
+    try:
+        # Obtener el header de autorización original del cliente
+        auth_header = request.headers.get("Authorization")
+        if not auth_header:
+            raise HTTPException(status_code=401, detail=AUTH_HEADER_MISSING_DETAIL)
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(
+                f"{HISTORY_SERVICE_URL}/history",
+                params={"limit": limit},
+                headers={"Authorization": auth_header}
             )
             
             if response.status_code != 200:
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=response.json().get("detail", "LLM processor error")
+                    detail="Error fetching search history"
                 )
             
             return response.json()
-            
+    
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=504,
-            detail="LLM processor request timeout"
+            detail="History service request timeout"
         )
     except httpx.ConnectError:
         raise HTTPException(
             status_code=503,
-            detail="Cannot connect to LLM processor service"
+            detail="Cannot connect to history service"
         )
     except HTTPException:
         raise
     except Exception as e:
+        logger.exception("Error obteniendo historial de búsquedas: %s", e)
         raise HTTPException(
             status_code=500,
-            detail=f"Gateway error: {str(e)}"
+            detail=INTERNAL_ERROR_DETAIL
         )
-
 
 # ==========================================
 # MAIN
@@ -549,7 +1055,7 @@ async def process_query(request: SearchRequest):
 if __name__ == "__main__":
     uvicorn.run(
         "main:app",
-        host="0.0.0.0",
+        host=HOST,
         port=3000,
-        reload=True
+        reload=False
     )

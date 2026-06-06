@@ -2,6 +2,7 @@ import os
 import json
 import time
 import glob
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -14,6 +15,9 @@ import google.auth
 from google.cloud import aiplatform
 import vertexai
 from vertexai.generative_models import GenerativeModel
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ==========================================
 # CONFIGURACIÓN VERTEX AI
@@ -39,6 +43,20 @@ LOCATION = os.getenv("LOCATION", "europe-west1")
 
 if not PROJECT_ID or not LOCATION:
     raise ValueError("PROJECT_ID y LOCATION son requeridos")
+
+# En contenedores debe ser 0.0.0.0 para aceptar conexiones del resto de
+# servicios de la red interna de Docker; el acceso queda acotado por la red
+# bridge aislada y por los puertos publicados en docker-compose.
+HOST = os.getenv("HOST", "0.0.0.0")
+# Orígenes permitidos para CORS (configurables por entorno). Por defecto solo
+# el frontend local; nunca "*" junto con cookies/credenciales.
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS", "http://localhost,http://localhost:3000"
+    ).split(",")
+    if origin.strip()
+]
 
 # Inicializar Vertex AI
 vertexai.init(project=PROJECT_ID, location=LOCATION)
@@ -213,19 +231,17 @@ class QueryRequest(BaseModel):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
-    print("\n" + "=" * 50)
-    print("LLM Query Processor - Vertex AI")
-    print("=" * 50)
+    logger.info("LLM Query Processor - Vertex AI iniciando")
     try:
         model.generate_content("Hola")
-        print("Conexión con Vertex AI establecida")
+        logger.info("Conexión con Vertex AI establecida")
     except Exception as e:
-        print(f"Error al conectar con Vertex AI: {e}\n")
+        logger.warning("No se pudo conectar con Vertex AI: %s", e)
     
     yield
     
     # Shutdown
-    print("\nLLM Query Processor - Apagando")
+    logger.info("LLM Query Processor - Apagando")
 
 app = FastAPI(
     title="LLM Query Processor - Gemini",
@@ -235,7 +251,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -259,7 +275,8 @@ def call_gemini(prompt: str) -> str:
                 status_code=403,
                 detail="Permiso denegado. Verifica las credenciales de Vertex AI."
             )
-        raise HTTPException(status_code=500, detail=f"Error calling Vertex AI: {error_str}")
+        logger.exception("Error al llamar a Vertex AI: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 def analyze_query(query: str) -> dict:
     """Analiza la consulta"""
@@ -337,4 +354,4 @@ async def process(request: QueryRequest):
     }
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8003, reload=False)
+    uvicorn.run("main:app", host=HOST, port=8003, reload=False)

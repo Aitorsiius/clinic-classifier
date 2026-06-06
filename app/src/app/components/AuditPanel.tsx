@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Alert, AlertDescription } from './ui/alert';
@@ -8,6 +9,7 @@ import { useSession } from '../context/SessionContext';
 import { AuditReportData } from './AuditResults';
 import { AnimatedProcessButton } from './AnimatedProcessButton';
 import { Filters } from './Filters';
+import { scrollToRevealExpansion } from '../utils/scroll';
 
 interface CSVRow {
   [key: string]: string;
@@ -21,6 +23,7 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
   const session = useSession();
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
+  const actionsRef = useRef<HTMLDivElement>(null);
 
   // Usar estado del contexto de sesión
   const csvData = session.csvData;
@@ -39,6 +42,20 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
   const { token } = useAuth();
 
   const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3000';
+
+  // Al cargar un CSV, la vista previa y el botón de acción aparecen con una
+  // animación de entrada; desplazamos la página EN PARALELO (al compás) para
+  // que el botón "Iniciar Auditoría" quede visible sin saltos bruscos.
+  useEffect(() => {
+    if (csvData && csvData.length > 0) {
+      const raf = requestAnimationFrame(() => {
+        if (actionsRef.current) {
+          scrollToRevealExpansion(actionsRef.current, 0, 450);
+        }
+      });
+      return () => cancelAnimationFrame(raf);
+    }
+  }, [csvData]);
 
   const parseCSV = (content: string): CSVRow[] => {
     const lines = content.trim().split('\n');
@@ -138,11 +155,17 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
     setError(null);
 
     try {
+      // Obtener user_id y session_id del localStorage
+      const userId = localStorage.getItem('user_id');
+      const sessionId = localStorage.getItem('session_id');
+
       const response = await fetch(`${API_GATEWAY_URL}/api/audit/batch-stream`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`
+          'Authorization': `Bearer ${token}`,
+          'x-user-id': userId || '',
+          'x-session-id': sessionId || ''
         },
         body: JSON.stringify({
           records: csvData,
@@ -180,6 +203,12 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
               if (data.type === 'complete') {
                 setProgress(100);
                 onAuditStart?.(data.result);
+                // La auditoría sigue en segundo plano aunque el usuario cambie
+                // de vista. Si al terminar no está en la pantalla de auditoría,
+                // dejamos un aviso visual en la barra de navegación.
+                if (window.location.pathname !== '/audit') {
+                  session.setAuditNotification(true);
+                }
               } else if (data.type === 'error') {
                 throw new Error(data.message);
               } else if (data.type === 'progress') {
@@ -254,7 +283,12 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
 
         {/* Vista Previa del CSV */}
         {csvData && (
-          <div className="space-y-3">
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: 'easeOut' }}
+            className="space-y-3"
+          >
             <div className="flex items-center gap-2 p-3 bg-green-50 rounded-lg border border-green-200">
               <CheckCircle2 className="h-5 w-5 text-green-600" />
               <div>
@@ -287,7 +321,7 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
                 </p>
               )}
             </div>
-          </div>
+          </motion.div>
         )}
 
         {/* Alerta de Error */}
@@ -316,7 +350,13 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
 
         {/* Botones de Acción */}
         {csvData && (
-          <div className="flex gap-3">
+          <motion.div
+            ref={actionsRef}
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.4, ease: 'easeOut', delay: 0.05 }}
+            className="flex gap-3 scroll-mb-6"
+          >
             <div className="flex-1">
               <AnimatedProcessButton
                 onClick={handleSubmit}
@@ -338,7 +378,7 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
             >
               Limpiar
             </Button>
-          </div>
+          </motion.div>
         )}
       </CardContent>
     </Card>

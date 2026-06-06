@@ -18,6 +18,30 @@ interface CSVRow {
   [key: string]: string;
 }
 
+/**
+ * Estadísticas acumuladas de la sesión actual. Se usan para mostrar un resumen
+ * al cerrar sesión. Las búsquedas no distinguen entre con/sin IA (todo junto).
+ */
+export interface SessionStats {
+  searches: number;
+  audits: number;
+  usersCreated: number;
+  passwordsChanged: number;
+  roleChanges: number;
+  usersDeleted: number;
+}
+
+export type SessionStatKey = keyof SessionStats;
+
+const EMPTY_SESSION_STATS: SessionStats = {
+  searches: 0,
+  audits: 0,
+  usersCreated: 0,
+  passwordsChanged: 0,
+  roleChanges: 0,
+  usersDeleted: 0,
+};
+
 interface SessionContextType {
   // Clasificación (Search)
   searchText: string;
@@ -50,6 +74,17 @@ interface SessionContextType {
   setAuditProgress: (progress: number) => void;
   auditReport: any;
   setAuditReport: (report: any) => void;
+  // Aviso visual: una auditoría finalizó mientras el usuario estaba en otra vista
+  auditNotification: boolean;
+  setAuditNotification: (value: boolean) => void;
+  // Aviso visual: una búsqueda finalizó mientras el usuario estaba en otra vista
+  searchNotification: boolean;
+  setSearchNotification: (value: boolean) => void;
+
+  // Estadísticas de la sesión (para el resumen al cerrar sesión)
+  sessionStats: SessionStats;
+  incrementStat: (key: SessionStatKey) => void;
+  sessionStartedAt: number;
 
   // Limpiar sesión
   clearSession: () => void;
@@ -75,8 +110,93 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [isProcessing, setIsProcessing] = useState(false);
   const [auditProgress, setAuditProgress] = useState(0);
   const [auditReport, setAuditReport] = useState<any>(null);
+  // Aviso pendiente de "auditoría finalizada" para la barra de navegación
+  const [auditNotification, setAuditNotification] = useState(false);
+  // Aviso pendiente de "búsqueda finalizada" para la barra de navegación
+  const [searchNotification, setSearchNotification] = useState(false);
 
-  // Cargar desde sessionStorage al montar el componente
+  // Estadísticas de la sesión (para el resumen al cerrar sesión)
+  const [sessionStats, setSessionStats] = useState<SessionStats>(EMPTY_SESSION_STATS);
+  const [sessionStartedAt, setSessionStartedAt] = useState<number>(() => {
+    const saved = sessionStorage.getItem('session_startedAt');
+    if (saved) return parseInt(saved, 10);
+    const now = Date.now();
+    sessionStorage.setItem('session_startedAt', String(now));
+    return now;
+  });
+
+  // Incrementa en uno el contador de una estadística de la sesión
+  const incrementStat = (key: SessionStatKey) => {
+    setSessionStats((prev: SessionStats) => ({ ...prev, [key]: prev[key] + 1 }));
+  };
+
+  // Función para limpiar todos los estados
+  const resetAllStates = () => {
+    setSearchText('');
+    setResults([]);
+    setAlgorithm('algoritmo1');
+    setTopK(5);
+    setUseAI(false);
+    setAiAnalysis(null);
+    setIsLoading(false);
+    setCSVData(null);
+    setFileName('');
+    setAuditAlgorithm('algoritmo1');
+    setAuditTopK(5);
+    setIsProcessing(false);
+    setAuditProgress(0);
+    setAuditReport(null);
+    setAuditNotification(false);
+    setSearchNotification(false);
+    // Reiniciar estadísticas y la marca de inicio de la sesión
+    setSessionStats(EMPTY_SESSION_STATS);
+    const now = Date.now();
+    setSessionStartedAt(now);
+    sessionStorage.setItem('session_startedAt', String(now));
+  };
+
+  // Detectar logout y limpiar sesión automáticamente
+  useEffect(() => {
+    const handleStorageChange = (e: StorageEvent) => {
+      // Si se borra el token de autenticación, limpiar todo
+      if (e.key === 'auth_token' && e.newValue === null) {
+        resetAllStates();
+      }
+    };
+
+    const handleLogout = () => {
+      resetAllStates();
+    };
+
+    const handleLogin = () => {
+      // Nueva sesión: reiniciar estadísticas y marcar el inicio de la sesión
+      setSessionStats(EMPTY_SESSION_STATS);
+      const now = Date.now();
+      setSessionStartedAt(now);
+      sessionStorage.setItem('session_startedAt', String(now));
+    };
+
+    // Escuchar eventos de storage (funciona entre pestañas)
+    window.addEventListener('storage', handleStorageChange);
+    
+    // Escuchar eventos personalizados de login/logout (misma pestaña)
+    window.addEventListener('auth:logout', handleLogout);
+    window.addEventListener('auth:login', handleLogin);
+
+    // También verificar al montar si no hay token
+    const token = localStorage.getItem('auth_token');
+    if (!token) {
+      resetAllStates();
+    }
+
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('auth:logout', handleLogout);
+      window.removeEventListener('auth:login', handleLogin);
+    };
+  }, []);
+
+  // Cargar desde sessionStorage al montar el componente (solo si hay token)
   useEffect(() => {
     const savedSearchText = sessionStorage.getItem('session_searchText');
     const savedResults = sessionStorage.getItem('session_results');
@@ -92,6 +212,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const savedIsProcessing = sessionStorage.getItem('session_isProcessing');
     const savedAuditProgress = sessionStorage.getItem('session_auditProgress');
     const savedAuditReport = sessionStorage.getItem('session_auditReport');
+    const savedAuditNotification = sessionStorage.getItem('session_auditNotification');
+    const savedSearchNotification = sessionStorage.getItem('session_searchNotification');
 
     if (savedSearchText) setSearchText(savedSearchText);
     if (savedResults) setResults(JSON.parse(savedResults));
@@ -107,6 +229,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (savedIsProcessing) setIsProcessing(savedIsProcessing === 'true');
     if (savedAuditProgress) setAuditProgress(parseInt(savedAuditProgress));
     if (savedAuditReport) setAuditReport(JSON.parse(savedAuditReport));
+    if (savedAuditNotification) setAuditNotification(savedAuditNotification === 'true');
+    if (savedSearchNotification) setSearchNotification(savedSearchNotification === 'true');
+
+    // Restaurar estadísticas de la sesión (si existen)
+    const savedSessionStats = sessionStorage.getItem('session_stats');
+    if (savedSessionStats) {
+      try {
+        const parsed = JSON.parse(savedSessionStats);
+        setSessionStats({ ...EMPTY_SESSION_STATS, ...parsed });
+      } catch {
+        setSessionStats(EMPTY_SESSION_STATS);
+      }
+    }
   }, []);
 
   // Guardar en sessionStorage cuando cambian los valores
@@ -174,6 +309,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
   }, [auditReport]);
 
+  useEffect(() => {
+    sessionStorage.setItem('session_auditNotification', auditNotification.toString());
+  }, [auditNotification]);
+
+  useEffect(() => {
+    sessionStorage.setItem('session_searchNotification', searchNotification.toString());
+  }, [searchNotification]);
+
+  // Persistir las estadísticas de la sesión para que sobrevivan a recargas
+  useEffect(() => {
+    sessionStorage.setItem('session_stats', JSON.stringify(sessionStats));
+  }, [sessionStats]);
+
   const clearSession = () => {
     setSearchText('');
     setResults([]);
@@ -189,6 +337,9 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setIsProcessing(false);
     setAuditProgress(0);
     setAuditReport(null);
+    setAuditNotification(false);
+    setSearchNotification(false);
+    setSessionStats(EMPTY_SESSION_STATS);
     sessionStorage.clear();
   };
 
@@ -221,6 +372,13 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setAuditProgress,
     auditReport,
     setAuditReport,
+    auditNotification,
+    setAuditNotification,
+    searchNotification,
+    setSearchNotification,
+    sessionStats,
+    incrementStat,
+    sessionStartedAt,
     clearSession,
   };
 

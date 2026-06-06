@@ -5,6 +5,7 @@ pydantic==2.5.3
 
 # HTTP Client
 requests==2.31.0
+httpx==0.25.2
 
 # Vector Database
 qdrant-client==1.7.1

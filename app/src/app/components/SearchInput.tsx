@@ -9,9 +9,10 @@ interface SearchInputProps {
   isLoading: boolean;
   useAI?: boolean;
   onUseAIChange?: (value: boolean) => void;
+  isAuthenticated?: boolean;
 }
 
-export function SearchInput({ value, onChange, onSearch, onClear, isLoading, useAI = false, onUseAIChange }: SearchInputProps) {
+export function SearchInput({ value, onChange, onSearch, onClear, isLoading, useAI = false, onUseAIChange, isAuthenticated = false }: SearchInputProps) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && e.ctrlKey) {
       onSearch();
@@ -58,13 +59,13 @@ export function SearchInput({ value, onChange, onSearch, onClear, isLoading, use
           {/* Botón de Usar IA */}
           <button
             onClick={() => onUseAIChange?.(!useAI)}
-            disabled={isLoading}
+            disabled={isLoading || !isAuthenticated}
             className={`px-3 py-1 rounded-lg transition-colors flex items-center gap-2 text-sm font-medium ${
               useAI
                 ? 'bg-purple-100 text-purple-700 hover:bg-purple-200 border border-purple-300'
                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-300'
             } disabled:opacity-50 disabled:cursor-not-allowed`}
-            title="Activar análisis inteligente con IA para mejorar la búsqueda"
+            title={isAuthenticated ? "Activar análisis inteligente con IA para mejorar la búsqueda" : "Inicia sesión para usar IA"}
           >
             <Zap className={`w-4 h-4 ${useAI ? 'fill-current' : ''}`} />
             Usar IA
@@ -85,7 +86,7 @@ export function SearchInput({ value, onChange, onSearch, onClear, isLoading, use
           <button
             onClick={onSearch}
             disabled={!value.trim() || isLoading}
-            className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-slate-300 disabled:cursor-not-allowed transition-colors flex items-center gap-2"
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-6 py-2 font-medium text-white shadow-lg shadow-blue-600/25 transition-all duration-200 hover:-translate-y-0.5 hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl hover:shadow-blue-600/30 active:translate-y-0 active:scale-[0.98] disabled:translate-y-0 disabled:cursor-not-allowed disabled:from-slate-300 disabled:to-slate-300 disabled:shadow-none"
           >
             {isLoading ? (
               <>

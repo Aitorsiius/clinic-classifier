@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { ChevronRight, Smile, Meh, Frown, ChevronsRight, Copy, Check } from 'lucide-react';
 import type { DiagnosisResult } from '../App';
 import { motion, AnimatePresence } from 'framer-motion';
+import { scrollToRevealExpansion } from '../utils/scroll';
 
 interface ResultCardProps {
   result: DiagnosisResult;
@@ -11,6 +12,8 @@ interface ResultCardProps {
 export function ResultCard({ result, rank }: ResultCardProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const { score, payload } = result;
   const scaledScore = score <= 1 ? score * 10 : score; // Escalar si viene normalizado (0-1)
   const { id, title, metadata = {} } = payload;
@@ -70,11 +73,28 @@ export function ResultCard({ result, rank }: ResultCardProps) {
   const handleToggleExpand = (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    setIsOpen(!isOpen);
+    const willOpen = !isOpen;
+    setIsOpen(willOpen);
+
+    // Al desplegar, desplazamos la página EN PARALELO a la animación de
+    // expansión (misma duración) para que ambos se muevan al compás, en lugar
+    // de saltar bruscamente una vez terminada la animación.
+    if (willOpen) {
+      requestAnimationFrame(() => {
+        const card = cardRef.current;
+        const content = contentRef.current;
+        if (!card) return;
+        // Altura natural del contenido que se va a desplegar; scrollHeight la
+        // reporta aunque el contenedor esté aún colapsado a height: 0.
+        const extraHeight = content ? content.scrollHeight + 16 : 0;
+        scrollToRevealExpansion(card, extraHeight, 400);
+      });
+    }
   };
 
   return (
     <motion.div
+      ref={cardRef}
       variants={cardVariants}
       layout
       className="bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-lg transition-all duration-300 p-5 hover:border-blue-300 cursor-pointer"
@@ -122,6 +142,7 @@ export function ResultCard({ result, rank }: ResultCardProps) {
       <AnimatePresence>
         {isOpen && (
           <motion.div
+            ref={contentRef}
             variants={contentVariants}
             initial="collapsed"
             animate="expanded"

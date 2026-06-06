@@ -273,7 +273,7 @@ export function AuditResults({ report }: AuditResultsProps) {
             </TabsList>
 
             <TabsContent value="table" className="overflow-x-auto overflow-y-hidden">
-              <table className="w-full text-sm table-fixed min-w-[950px]">
+              <table className="w-full text-sm table-fixed min-w-[59.375rem]">
                 <thead className="bg-gray-50 border-b sticky top-0">
                   <tr>
                     <th className="px-4 py-2 text-left font-medium text-gray-700 w-[10%]">ID Paciente</th>
@@ -376,7 +376,7 @@ export function AuditResults({ report }: AuditResultsProps) {
                           {finding.alternative_codes.length > 0 && (
                             <div className="bg-white rounded border-2 border-blue-200 p-3">
                               <p className="text-xs text-blue-700 font-semibold mb-2">
-                                Códigos Alternativos {report.top_k && `(${finding.alternative_codes.length} de ${report.top_k - 1} máx.)`}
+                                Códigos Alternativos {report.top_k && `(${finding.alternative_codes.length} candidatos)`}
                               </p>
                               <div className="flex flex-wrap gap-2">
                                 {finding.alternative_codes.map((code, i) => {

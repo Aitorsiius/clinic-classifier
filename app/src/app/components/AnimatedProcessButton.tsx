@@ -1,6 +1,17 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 
+// Configuración de las burbujas que ascienden por el agua (posición, tamaño,
+// altura de ascenso, deriva horizontal, duración y retardo de cada una).
+const BUBBLES = [
+  { left: 10, size: 6, rise: 40, drift: 4, duration: 2.8, delay: 0 },
+  { left: 24, size: 4, rise: 38, drift: -3, duration: 2.2, delay: 0.7 },
+  { left: 40, size: 7, rise: 42, drift: 5, duration: 3.3, delay: 1.2 },
+  { left: 55, size: 5, rise: 39, drift: -4, duration: 2.6, delay: 0.4 },
+  { left: 70, size: 4, rise: 41, drift: 3, duration: 3.0, delay: 1.5 },
+  { left: 85, size: 6, rise: 37, drift: -5, duration: 2.4, delay: 0.9 },
+];
+
 interface AnimatedProcessButtonProps {
   onClick: () => void;
   isProcessing: boolean;
@@ -56,55 +67,74 @@ export function AnimatedProcessButton({
     <button
       onClick={onClick}
       disabled={disabled || isProcessing}
-      className="relative w-full px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-opacity-100 disabled:bg-blue-900 disabled:cursor-not-allowed text-white rounded-lg font-medium transition-all overflow-hidden group"
+      className="group relative w-full overflow-hidden rounded-xl px-6 py-3 font-medium text-white bg-gradient-to-r from-blue-600 to-indigo-600 shadow-lg shadow-blue-600/25 transition-all duration-200 hover:-translate-y-0.5 hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl hover:shadow-blue-600/30 active:translate-y-0 active:scale-[0.98] disabled:translate-y-0 disabled:cursor-not-allowed disabled:from-blue-800 disabled:to-indigo-900 disabled:shadow-md"
     >
       {/* Barra de progreso con efecto de agua */}
       {isProcessing && (
         <motion.div
-          className="absolute left-0 top-0 bottom-0 bg-cyan-500 overflow-hidden"
-          animate={{
-            width: `${progress}%`,
-          }}
-          transition={{
-            duration: 0.3,
-            ease: 'easeOut',
-          }}
+          className="pointer-events-none absolute inset-y-0 left-0 overflow-hidden"
+          animate={{ width: `${progress}%` }}
+          transition={{ duration: 0.5, ease: 'easeOut' }}
         >
-          {/* Ola frontal */}
-          <motion.div 
-            className="absolute top-0 bottom-0 w-[200px] opacity-40 bg-cyan-300 pointer-events-none"
-            style={{ 
-              right: '-100px', 
-              borderRadius: '45%', 
-              scale: 2 
-            }}
-            animate={{ 
-              rotate: 360,
-              y: ['-5%', '5%', '-5%']
-            }}
-            transition={{ 
-              rotate: { duration: 3, repeat: Infinity, ease: "linear" },
-              y: { duration: 2, repeat: Infinity, ease: "easeInOut" }
-            }}
-          />
-          {/* Ola trasera */}
-          <motion.div 
-            className="absolute top-0 bottom-0 w-[220px] opacity-30 bg-cyan-200 pointer-events-none"
-            style={{ 
-              right: '-110px', 
-              borderRadius: '40%', 
-              scale: 2.2 
-            }}
-            animate={{ 
-              rotate: -360,
-            }}
-            transition={{ 
-              duration: 4, 
-              repeat: Infinity, 
-              ease: "linear" 
-            }}
-          />
-          <div className="absolute inset-0 bg-cyan-500 opacity-50 z-10" />
+          {/* Cuerpo del agua con degradado de profundidad */}
+          <div className="absolute inset-0 bg-gradient-to-b from-cyan-300 via-cyan-400 to-blue-500" />
+
+          {/* Brillo suave de la superficie */}
+          <div className="absolute inset-x-0 top-0 h-1/2 bg-gradient-to-b from-white/25 to-transparent" />
+
+          {/* Ola trasera (lenta, efecto parallax) */}
+          <motion.div
+            className="absolute inset-y-0 left-0 h-full"
+            style={{ width: '200%' }}
+            animate={{ x: ['0%', '-50%'] }}
+            transition={{ duration: 6, repeat: Infinity, ease: 'linear' }}
+          >
+            <svg className="h-full w-full" viewBox="0 0 1200 100" preserveAspectRatio="none">
+              <path
+                d="M0,24 Q75,8 150,24 Q225,40 300,24 Q375,8 450,24 Q525,40 600,24 Q675,8 750,24 Q825,40 900,24 Q975,8 1050,24 Q1125,40 1200,24 L1200,100 L0,100 Z"
+                fill="rgba(165,243,252,0.35)"
+              />
+            </svg>
+          </motion.div>
+
+          {/* Ola frontal (rápida, efecto parallax) */}
+          <motion.div
+            className="absolute inset-y-0 left-0 h-full"
+            style={{ width: '200%' }}
+            animate={{ x: ['0%', '-50%'] }}
+            transition={{ duration: 3.2, repeat: Infinity, ease: 'linear' }}
+          >
+            <svg className="h-full w-full" viewBox="0 0 1200 100" preserveAspectRatio="none">
+              <path
+                d="M0,30 Q50,14 100,30 Q150,46 200,30 Q250,14 300,30 Q350,46 400,30 Q450,14 500,30 Q550,46 600,30 Q650,14 700,30 Q750,46 800,30 Q850,14 900,30 Q950,46 1000,30 Q1050,14 1100,30 Q1150,46 1200,30 L1200,100 L0,100 Z"
+                fill="rgba(207,250,254,0.5)"
+              />
+            </svg>
+          </motion.div>
+
+          {/* Burbujas que ascienden */}
+          {BUBBLES.map((b, i) => (
+            <motion.span
+              key={i}
+              className="absolute rounded-full bg-white/60"
+              style={{
+                left: `${b.left}%`,
+                width: b.size,
+                height: b.size,
+                bottom: -b.size,
+              }}
+              animate={{ y: [0, -b.rise], x: [0, b.drift, 0], opacity: [0, 0.7, 0] }}
+              transition={{
+                duration: b.duration,
+                repeat: Infinity,
+                delay: b.delay,
+                ease: 'easeInOut',
+              }}
+            />
+          ))}
+
+          {/* Brillo en el borde de avance del agua */}
+          <div className="absolute inset-y-0 right-0 w-2 bg-white/30 blur-[2px]" />
         </motion.div>
       )}
 

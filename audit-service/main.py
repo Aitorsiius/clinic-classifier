@@ -20,6 +20,7 @@ from enum import Enum
 import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
+import logging
 
 # Importar módulo de auditoría
 from audit import (
@@ -33,6 +34,22 @@ from audit import (
 # ==========================================
 AUDIT_SERVICE_PORT = int(os.getenv("AUDIT_SERVICE_PORT", "8005"))
 API_GATEWAY_URL = os.getenv("API_GATEWAY_URL", "http://localhost:3000")
+LOG_SERVICE_URL = os.getenv("LOG_SERVICE_URL", "http://localhost:8006")
+# En contenedores debe ser 0.0.0.0 para aceptar conexiones del resto de
+# servicios de la red interna de Docker; el acceso queda acotado por la red
+# bridge aislada y por los puertos publicados en docker-compose.
+HOST = os.getenv("HOST", "0.0.0.0")
+# Orígenes permitidos para CORS (configurables por entorno). Por defecto solo
+# el frontend local; nunca "*" junto con cookies/credenciales.
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.getenv(
+        "ALLOWED_ORIGINS", "http://localhost,http://localhost:3000"
+    ).split(",")
+    if origin.strip()
+]
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -138,10 +155,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
-# Configurar CORS
+# Configurar CORS (orígenes restringidos y configurables; nunca "*" con credenciales)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -204,7 +221,9 @@ async def audit_batch_stream(
                         loop
                     )
                 except Exception:
-                    pass            # Procesar auditoría en un executor (thread pool) para no bloquear el event loop
+                    pass
+
+            # Procesar la auditoría en un thread pool para no bloquear el event loop
             search_engine = GatewaySearchEngine(API_GATEWAY_URL)
             auditor = CodeAuditor(search_engine)
             
@@ -269,7 +288,8 @@ async def audit_batch_stream(
             yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
             
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': str(e)})}\n\n"
+            logger.exception("Error durante el streaming de auditoría: %s", e)
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Internal server error'})}\n\n"
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -360,11 +380,54 @@ async def audit_batch(
             findings=findings
         )
         
+        # Registrar auditoría en log-service
+        if current_user:
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.post(
+                        f"{LOG_SERVICE_URL}/audits",
+                        json={
+                            "session_id": "audit_session_" + report.audit_id,
+                            "username": current_user,
+                            "records_count": len(diagnosis_records),
+                            "algorithm": request.algorithm or "algoritmo1",
+                            "top_k": request.top_k or 5,
+                            "status": "success",
+                            "details": {
+                                "total_correct": report.total_correct,
+                                "total_partial_match": report.total_partial_match,
+                                "total_mismatch": report.total_mismatch,
+                                "conformity_percentage": report.conformity_percentage,
+                                "findings": [
+                                    {
+                                        "patient_id": f.patient_id,
+                                        "diagnosis_text": f.diagnosis_text,
+                                        "assigned_code": f.assigned_code,
+                                        "suggested_code": f.suggested_code,
+                                        "discrepancy_type": f.discrepancy_type,
+                                        "confidence_score": f.confidence_score,
+                                        "match_score": f.match_score,
+                                        "explanation": f.explanation,
+                                        "alternative_codes": f.alternative_codes
+                                    }
+                                    for f in report.findings
+                                ]
+                            }
+                        },
+                        timeout=5
+                    )
+            except Exception as e:
+                logger.warning(f"No se pudo registrar auditoría en log-service: {e}")
+        
         return result
         
+    except HTTPException:
+        raise
     except httpx.RequestError as e:
+        logger.warning("Backend no disponible durante la auditoría: %s", e)
         raise HTTPException(status_code=503, detail="Backend service unavailable")
     except Exception as e:
+        logger.exception("Error interno durante la auditoría: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.post("/audit/record", response_model=AuditResult, tags=["Audit"])
@@ -400,9 +463,12 @@ async def audit_record(
         
         return AuditResult(**result)
     
+    except HTTPException:
+        raise
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Backend service unavailable")
-    except Exception:
+    except Exception as e:
+        logger.exception("Error interno auditando registro individual: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/audit/{audit_id}", response_model=AuditReportResponse, tags=["Audit"])
@@ -439,9 +505,12 @@ async def get_audit_report(
         result = response.json()
         return AuditReportResponse(**result)
     
+    except HTTPException:
+        raise
     except httpx.RequestError:
         raise HTTPException(status_code=503, detail="Backend service unavailable")
-    except Exception:
+    except Exception as e:
+        logger.exception("Error interno obteniendo reporte de auditoría: %s", e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 # ==========================================
@@ -450,7 +519,7 @@ async def get_audit_report(
 if __name__ == "__main__":
     uvicorn.run(
         app,
-        host="0.0.0.0",
+        host=HOST,
         port=AUDIT_SERVICE_PORT,
         log_level="info"
     )

@@ -18,6 +18,8 @@ export default function AuditPage() {
     try {
       // Establecer el resultado de la auditoría en el contexto
       setAuditReport(auditResult);
+      // Contabilizar la auditoría en las estadísticas de la sesión
+      session.incrementStat('audits');
       // Limpiar el CSV después de completar la auditoría
       session.setCSVData(null);
       session.setFileName('');
@@ -46,7 +48,7 @@ export default function AuditPage() {
               </div>
               <button
                 onClick={() => setAuditReport(null)}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium"
+                className="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 font-medium text-white shadow-lg shadow-blue-600/25 transition-all duration-200 hover:-translate-y-0.5 hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl hover:shadow-blue-600/30 active:translate-y-0 active:scale-[0.98]"
               >
                 Nueva Auditoría
               </button>

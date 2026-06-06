@@ -20,4 +20,4 @@ COPY main.py .
 EXPOSE 8004
 
 # Comando para ejecutar la aplicación
-CMD ["python", "main.py"]
+CMD ["python", "-u", "main.py"]

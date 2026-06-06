@@ -1,3 +1,4 @@
+name: clinic-classifier
 services:
   # ==========================================
   # MICROSERVICIOS PRINCIPALES
@@ -8,6 +9,7 @@ services:
     build:
       context: ./auth-service
       dockerfile: Dockerfile
+    image: cie10-auth:latest
     container_name: cie10-auth
     ports:
       - "8004:8004"
@@ -33,6 +35,7 @@ services:
     build:
       context: ./audit-service
       dockerfile: Dockerfile
+    image: cie10-audit:latest
     container_name: cie10-audit
     ports:
       - "8005:8005"
@@ -61,6 +64,7 @@ services:
     build:
       context: ./log-service
       dockerfile: Dockerfile
+    image: cie10-logs:latest
     container_name: cie10-logs
     ports:
       - "8006:8006"
@@ -85,6 +89,7 @@ services:
     build:
       context: ./history-service
       dockerfile: Dockerfile
+    image: cie10-history:latest
     container_name: cie10-history
     ports:
       - "8007:8007"
@@ -115,6 +120,7 @@ services:
     build:
       context: ./llm-query-processor-service
       dockerfile: Dockerfile
+    image: cie10-llm-processor:latest
     container_name: cie10-llm-processor
     ports:
       - "8003:8003"
@@ -177,6 +183,7 @@ services:
     build:
       context: ./backend-service/cie_classifier
       dockerfile: Dockerfile
+    image: cie10-backend:latest
     container_name: cie10-backend
     ports:
       - "8000:8000"
@@ -207,6 +214,7 @@ services:
     build:
       context: ./api-gateway-service
       dockerfile: Dockerfile
+    image: cie10-gateway:latest
     container_name: cie10-gateway
     ports:
       - "3000:3000"
@@ -248,6 +256,7 @@ services:
       dockerfile: Dockerfile
       args:
         - API_GATEWAY_URL=http://localhost:3000
+    image: cie10-frontend:latest
     container_name: cie10-frontend
     ports:
       - "80:80"

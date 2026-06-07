@@ -29,6 +29,7 @@ export interface SessionStats {
   passwordsChanged: number;
   roleChanges: number;
   usersDeleted: number;
+  usersUnblocked: number;
 }
 
 export type SessionStatKey = keyof SessionStats;
@@ -40,6 +41,7 @@ const EMPTY_SESSION_STATS: SessionStats = {
   passwordsChanged: 0,
   roleChanges: 0,
   usersDeleted: 0,
+  usersUnblocked: 0,
 };
 
 interface SessionContextType {

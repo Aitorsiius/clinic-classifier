@@ -15,6 +15,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Copiar código de la aplicación
 COPY main.py .
+COPY rate_limiter.py .
 
 # Exponer puerto
 EXPOSE 8004

@@ -11,6 +11,9 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
+  Lock,
+  ShieldCheck,
+  RefreshCw,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -30,6 +33,7 @@ interface User {
   admin: boolean;
   audit: boolean;
   created_at?: string;
+  blocked?: boolean;
 }
 
 interface UsersTableProps {
@@ -38,6 +42,8 @@ interface UsersTableProps {
   onEditRoles: (user: User) => void;
   onChangePassword: (username: string) => void;
   onDelete: (username: string) => void;
+  onUnblock: (username: string) => void;
+  onRefresh: () => void;
   currentUsername: string;
 }
 
@@ -52,15 +58,18 @@ export function UsersTable({
   onEditRoles,
   onChangePassword,
   onDelete,
+  onUnblock,
+  onRefresh,
   currentUsername
 }: UsersTableProps) {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(10);
   const [pageInput, setPageInput] = useState('1');
 
-  // Filtrado por nombre de usuario y por rol
+  // Filtrado por nombre de usuario, por rol y por estado de bloqueo
   const filteredUsers = useMemo(() => {
     let result = [...users];
 
@@ -73,15 +82,21 @@ export function UsersTable({
       result = result.filter((u) => getUserRole(u) === roleFilter);
     }
 
+    if (statusFilter === 'blocked') {
+      result = result.filter((u) => u.blocked);
+    } else if (statusFilter === 'active') {
+      result = result.filter((u) => !u.blocked);
+    }
+
     return result;
-  }, [users, search, roleFilter]);
+  }, [users, search, roleFilter, statusFilter]);
 
   const totalPages = Math.max(1, Math.ceil(filteredUsers.length / pageSize));
 
   // Volver a la primera página cuando cambian los filtros o el tamaño de página
   useEffect(() => {
     setPage(1);
-  }, [search, roleFilter, pageSize]);
+  }, [search, roleFilter, statusFilter, pageSize]);
 
   // Mantener la página dentro de los límites válidos
   useEffect(() => {
@@ -119,11 +134,26 @@ export function UsersTable({
     return (
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Users className="w-5 h-5" />
-            Usuarios
-          </CardTitle>
-          <CardDescription>Gestión de usuarios del sistema</CardDescription>
+          <div className="flex items-start justify-between gap-4">
+            <div className="space-y-1.5">
+              <CardTitle className="flex items-center gap-2">
+                <Users className="w-5 h-5" />
+                Usuarios
+              </CardTitle>
+              <CardDescription>Gestión de usuarios del sistema</CardDescription>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onRefresh}
+              disabled={isLoading}
+              className="gap-2 shrink-0"
+              aria-label="Actualizar lista de usuarios"
+            >
+              <RefreshCw className="w-4 h-4 animate-spin" />
+              Actualizar
+            </Button>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col items-center justify-center gap-4 py-16">
@@ -138,11 +168,26 @@ export function UsersTable({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="flex items-center gap-2">
-          <Users className="w-5 h-5" />
-          Usuarios ({filteredUsers.length})
-        </CardTitle>
-        <CardDescription>Gestión de usuarios del sistema</CardDescription>
+        <div className="flex items-start justify-between gap-4">
+          <div className="space-y-1.5">
+            <CardTitle className="flex items-center gap-2">
+              <Users className="w-5 h-5" />
+              Usuarios ({filteredUsers.length})
+            </CardTitle>
+            <CardDescription>Gestión de usuarios del sistema</CardDescription>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRefresh}
+            disabled={isLoading}
+            className="gap-2 shrink-0"
+            aria-label="Actualizar lista de usuarios"
+          >
+            <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+            Actualizar
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Controles: búsqueda y filtrado (estilo tabla de auditoría) */}
@@ -185,6 +230,20 @@ export function UsersTable({
                 </SelectContent>
               </Select>
             </div>
+
+            {/* Filtro por estado de bloqueo */}
+            <div className="w-full sm:w-48">
+              <Select value={statusFilter} onValueChange={setStatusFilter}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Filtrar por estado..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos los estados</SelectItem>
+                  <SelectItem value="blocked">Bloqueados</SelectItem>
+                  <SelectItem value="active">No bloqueados</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 
@@ -208,7 +267,7 @@ export function UsersTable({
               </thead>
               {/* La key fuerza el re-montaje al cambiar de página/filtro para
                   reproducir la animación de desvanecimiento de arriba a abajo */}
-              <tbody key={`${page}-${roleFilter}-${search}`}>
+              <tbody key={`${page}-${roleFilter}-${statusFilter}-${search}`}>
                 {paginatedUsers.map((user, idx) => (
                   <motion.tr
                     key={user.username}
@@ -219,10 +278,22 @@ export function UsersTable({
                       delay: Math.min(idx * 0.04, 0.4),
                       ease: 'easeOut',
                     }}
-                    className="border-b border-gray-100 hover:bg-gray-50"
+                    className={
+                      user.blocked
+                        ? 'border-b border-red-200 bg-red-50 hover:bg-red-100'
+                        : 'border-b border-gray-100 hover:bg-gray-50'
+                    }
                   >
                     <td className="py-3 px-4">
-                      <div className="font-medium text-gray-900">{user.username}</div>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-gray-900">{user.username}</span>
+                        {user.blocked && (
+                          <Badge className="bg-red-600 text-white hover:bg-red-600 gap-1">
+                            <Lock className="w-3 h-3" />
+                            Bloqueado
+                          </Badge>
+                        )}
+                      </div>
                       {user.username === currentUsername && (
                         <div className="text-xs text-blue-600 mt-1">Tu cuenta</div>
                       )}
@@ -253,6 +324,17 @@ export function UsersTable({
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex gap-2 justify-end">
+                        {user.blocked && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onUnblock(user.username)}
+                            className="gap-1 text-xs text-green-700 border-green-300 hover:text-green-800 hover:bg-green-50"
+                          >
+                            <ShieldCheck className="w-3 h-3" />
+                            Desbloquear
+                          </Button>
+                        )}
                         <Button
                           variant="outline"
                           size="sm"

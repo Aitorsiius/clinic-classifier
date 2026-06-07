@@ -9,6 +9,7 @@ import {
   KeyRound,
   ShieldCheck,
   UserMinus,
+  LockOpen,
   X,
   type LucideIcon,
 } from 'lucide-react';
@@ -125,6 +126,12 @@ export function LogoutOverlay() {
           label: 'Usuarios eliminados',
           value: stats?.usersDeleted ?? 0,
           icon: UserMinus,
+        },
+        {
+          key: 'usersUnblocked',
+          label: 'Usuarios desbloqueados',
+          value: stats?.usersUnblocked ?? 0,
+          icon: LockOpen,
         },
       ].filter(
         // Ocultar contadores que estén a cero: solo el tiempo (string) se muestra siempre

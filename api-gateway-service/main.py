@@ -312,6 +312,14 @@ async def login(request: LoginRequest, req: Request):
                 json={
                     "username": request.username,
                     "password": request.password
+                },
+                # Reenviar la IP real del cliente para que el auth-service pueda
+                # aplicar el rate limiting / bloqueo por IP. Se usa la IP del
+                # socket (no una cabecera proporcionada por el cliente), evitando
+                # así que un atacante falsee su IP.
+                headers={
+                    "X-Forwarded-For": get_client_ip(req),
+                    "X-Real-IP": get_client_ip(req),
                 }
             )
         
@@ -985,6 +993,36 @@ async def admin_delete_user(username: str, request: Request, user_username: str 
         f"/admin/users/{username}",
         error_detail="Error deleting user",
         log_label="Error eliminando usuario (admin)",
+        forward_session=True,
+    )
+
+@app.get("/api/admin/users/{username}/block-info")
+async def admin_user_block_info(username: str, request: Request, user_username: str = Depends(get_current_user)):
+    """
+    Obtiene la información de bloqueo de un usuario (solo admin) - DELEGADO AL AUTH SERVICE
+
+    Devuelve los intentos de inicio de sesión fallidos con sus fechas y el
+    número de veces que el usuario ha sido bloqueado.
+    """
+    return await _proxy_admin_request(
+        request,
+        "GET",
+        f"/admin/users/{username}/block-info",
+        error_detail="Error fetching block info",
+        log_label="Error obteniendo información de bloqueo (admin)",
+    )
+
+@app.post("/api/admin/users/{username}/unblock")
+async def admin_unblock_user(username: str, request: Request, user_username: str = Depends(get_current_user)):
+    """
+    Desbloquea a un usuario bloqueado por intentos fallidos (solo admin) - DELEGADO AL AUTH SERVICE
+    """
+    return await _proxy_admin_request(
+        request,
+        "POST",
+        f"/admin/users/{username}/unblock",
+        error_detail="Error unblocking user",
+        log_label="Error desbloqueando usuario (admin)",
         forward_session=True,
     )
 

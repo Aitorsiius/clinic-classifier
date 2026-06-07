@@ -25,6 +25,7 @@ const EMPTY_LOGOUT_STATS: SessionStats = {
   passwordsChanged: 0,
   roleChanges: 0,
   usersDeleted: 0,
+  usersUnblocked: 0,
 };
 
 interface AuthContextType {

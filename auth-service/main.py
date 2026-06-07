@@ -21,6 +21,8 @@ import bcrypt
 import httpx
 import logging
 
+from rate_limiter import LoginRateLimiter
+
 # ==========================================
 # CONFIGURACIÓN
 # ==========================================
@@ -64,6 +66,13 @@ ALLOWED_ORIGINS = [
 
 # Mensajes de error reutilizados en varios endpoints
 USER_NOT_FOUND_DETAIL = "User not found"
+DB_UNAVAILABLE_DETAIL = "Database connection unavailable"
+# Mensaje devuelto cuando una cuenta/IP está bloqueada por exceso de intentos
+# fallidos de inicio de sesión. Debe ser claro para el usuario final.
+ACCOUNT_BLOCKED_DETAIL = (
+    "Tu cuenta ha sido bloqueada tras varios intentos fallidos de inicio de "
+    "sesión. Contacta con un administrador del sistema para recuperar el acceso."
+)
 
 # ==========================================
 # CONEXIÓN A MONGODB
@@ -71,16 +80,19 @@ USER_NOT_FOUND_DETAIL = "User not found"
 mongo_client = None
 db = None
 users_collection = None
+rate_limiter = None
 
 def init_mongodb():
     """Inicializa la conexión a MongoDB"""
-    global mongo_client, db, users_collection
+    global mongo_client, db, users_collection, rate_limiter
     try:
         mongo_client = MongoClient(MONGO_CONNECTION, serverSelectionTimeoutMS=5000)
         # Verificar la conexión
         mongo_client.admin.command('ping')
         db = mongo_client.get_database('clinic-classifier')
         users_collection = db['users']
+        # Inicializar el limitador de intentos de login (bloqueo por fuerza bruta)
+        rate_limiter = LoginRateLimiter(db)
         logger.info("Conexión a MongoDB establecida correctamente")
         return True
     except ServerSelectionTimeoutError:
@@ -92,6 +104,14 @@ def init_mongodb():
 
 # Intentar conexión inicial
 init_mongodb()
+
+
+def get_rate_limiter() -> Optional[LoginRateLimiter]:
+    """Devuelve el limitador de login, reintentando la conexión si es necesario."""
+    global rate_limiter
+    if rate_limiter is None:
+        init_mongodb()
+    return rate_limiter
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -231,6 +251,25 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         True si coinciden, False en otro caso
     """
     return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+def get_request_ip(request: Request) -> str:
+    """Obtiene la IP real del cliente.
+
+    El API Gateway reenvía la IP del equipo del usuario en las cabeceras
+    ``X-Forwarded-For`` / ``X-Real-IP`` (la conexión directa procede del propio
+    gateway dentro de la red interna de Docker). Se usa la cabecera reenviada
+    y, como último recurso, la IP del socket.
+    """
+    forwarded = request.headers.get("x-forwarded-for")
+    if forwarded:
+        # Puede ser una lista "client, proxy1, proxy2"; el primero es el cliente.
+        return forwarded.split(",")[0].strip()
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    if request.client:
+        return request.client.host
+    return "unknown"
 
 # ==========================================
 # FUNCIONES DE MONGODB
@@ -404,7 +443,7 @@ def update_user_password(username: str, new_password: str) -> bool:
 
 def delete_user(username: str) -> bool:
     """
-    Elimina un usuario de MongoDB
+    Elimina un usuario de MongoDB y sus registros de rate-limit asociados
     
     Args:
         username: Username del usuario a eliminar
@@ -420,6 +459,18 @@ def delete_user(username: str) -> bool:
             logger.error("MongoDB no disponible para eliminar usuario")
             return False
         
+        # Obtener el user_id antes de eliminar el usuario
+        user = users_collection.find_one({"username": username})
+        if not user:
+            logger.warning("Usuario '%s' no encontrado para eliminar", username)
+            return False
+        
+        user_id = str(user.get("_id"))
+        
+        # Eliminar registros de rate-limit (intentos y bloqueos) del usuario
+        rate_limiter.delete_user_records(user_id)
+        
+        # Eliminar el usuario
         result = users_collection.delete_one({"username": username})
         return result.deleted_count > 0
     except Exception:
@@ -568,52 +619,79 @@ async def health_check():
 async def login(request: LoginRequest, request_obj: Request):
     """
     Endpoint de login
-    
+
+    Aplica una política anti fuerza bruta: si un usuario falla el inicio de
+    sesión varias veces en un intervalo corto, su cuenta (y la IP del equipo)
+    quedan bloqueadas hasta que un administrador lo desbloquee.
+
     Args:
         request: Credenciales de login (username y password)
         request_obj: Request object para obtener IP
-        
+
     Returns:
         LoginResponse con token JWT y datos del usuario
-        
+
     Raises:
-        HTTPException: Si las credenciales son inválidas
+        HTTPException: 401 si las credenciales son inválidas, 403 si la cuenta
+            o la IP están bloqueadas por intentos fallidos.
     """
     # Reintentar conexión a MongoDB si es necesario
     if users_collection is None:
         init_mongodb()
     
     if users_collection is None:
-        raise HTTPException(status_code=503, detail="Database connection unavailable")
-    
+        raise HTTPException(status_code=503, detail=DB_UNAVAILABLE_DETAIL)
+
+    client_ip = get_request_ip(request_obj)
+    user_agent = request_obj.headers.get("user-agent", "unknown")
+    limiter = get_rate_limiter()
+
     # Obtener usuario de MongoDB
     user = get_user_by_username(request.username)
-    
+
     if not user:
+        # Usuario inexistente: no se registra intento ni bloqueo (no hay user_id
+        # que asociar y el panel de administración solo gestiona usuarios reales).
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
+    # El rate limiter identifica al usuario por su user_id (opaco), nunca por el
+    # username, para que en la base de datos no se revele la identidad.
+    user_id = str(user.get("_id"))
+
+    # Rechazar de inmediato si la cuenta ya está bloqueada. El bloqueo se aplica
+    # por cuenta (no por IP a secas) para no dejar fuera al administrador ni a
+    # otros usuarios legítimos que compartan IP (NAT, mismo equipo, Docker). La
+    # IP del atacante se guarda y se muestra al administrador como contexto.
+    if limiter and limiter.is_blocked(user_id=user_id):
+        raise HTTPException(status_code=403, detail=ACCOUNT_BLOCKED_DETAIL)
+
     # Verificar contraseña
     if not verify_password(request.password, user.get("password", "")):
+        # Registrar el intento fallido y bloquear si se supera el umbral.
+        if limiter:
+            outcome = limiter.record_failed_attempt(
+                user_id, client_ip, user_agent
+            )
+            if outcome.get("blocked"):
+                raise HTTPException(status_code=403, detail=ACCOUNT_BLOCKED_DETAIL)
         raise HTTPException(status_code=401, detail="Invalid credentials")
-    
+
+    # Login correcto: reiniciar el contador de intentos fallidos del usuario.
+    if limiter:
+        limiter.reset_on_success(user_id)
+
     # Crear token
     token, exp_time = create_token(request.username)
     expires_in = int((exp_time - datetime.now(timezone.utc)).total_seconds())
     
-    # Get user_id from MongoDB _id
-    user_id = str(user.get("_id"))
-    
     # Registrar login en log-service
     try:
-        ip_address = request_obj.client.host if request_obj.client else "unknown"
-        user_agent = request_obj.headers.get("user-agent", "unknown")
-        
         async with httpx.AsyncClient() as client:
             await client.post(
                 f"{LOG_SERVICE_URL}/sessions/create",
                 json={
                     "user_id": user_id,
-                    "ip_address": ip_address,
+                    "ip_address": client_ip,
                     "user_agent": user_agent
                 },
                 timeout=5
@@ -756,6 +834,13 @@ async def list_users(authorization: Annotated[str | None, Header()] = None):
     require_admin(authorization)
 
     users = get_all_users()
+    # Marcar qué usuarios están bloqueados actualmente por intentos fallidos.
+    # El rate limiter trabaja con user_id (opaco); get_all_users ya devuelve
+    # el _id como cadena, así que comparamos por user_id de forma transparente.
+    limiter = get_rate_limiter()
+    blocked_user_ids = limiter.get_blocked_user_ids() if limiter else set()
+    for user in users:
+        user["blocked"] = str(user.get("_id")) in blocked_user_ids
     return users
 
 @app.post("/admin/users", response_model=dict, tags=["Admin Management"])
@@ -986,6 +1071,104 @@ async def delete_existing_user(
 
     return {
         "message": "User deleted successfully",
+        "username": username
+    }
+
+@app.get("/admin/users/{username}/block-info", response_model=dict, tags=["Admin Management"])
+async def get_user_block_info(
+    username: str,
+    authorization: Annotated[str | None, Header()] = None,
+):
+    """
+    Devuelve la información de bloqueo de un usuario (solo admin).
+
+    Incluye los intentos de inicio de sesión fallidos con sus fechas, el número
+    de veces que el usuario ha sido bloqueado por el mismo motivo y los datos
+    del bloqueo activo, para que el administrador pueda revisar la situación
+    antes de desbloquear.
+
+    Args:
+        username: Username del usuario a consultar
+        authorization: Header de autorización
+
+    Returns:
+        Información de bloqueo (failed_attempts, block_count, current_block...)
+
+    Raises:
+        HTTPException: Si no es admin, el usuario no existe o no hay BD.
+    """
+    require_admin(authorization)
+
+    user = get_user_by_username(username)
+    if not user:
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
+
+    limiter = get_rate_limiter()
+    if not limiter:
+        raise HTTPException(status_code=503, detail=DB_UNAVAILABLE_DETAIL)
+
+    # Internamente el rate limiter trabaja con el user_id (opaco en BD). Para la
+    # aplicación es transparente: resolvemos el username a user_id, consultamos
+    # por user_id y añadimos el username a la respuesta (que el frontend muestra).
+    user_id = str(user.get("_id"))
+    info = limiter.get_block_info(user_id)
+    info["username"] = username
+    return info
+
+@app.post("/admin/users/{username}/unblock", response_model=dict, tags=["Admin Management"])
+async def unblock_user(
+    username: str,
+    background_tasks: BackgroundTasks,
+    authorization: Annotated[str | None, Header()] = None,
+    x_session_id: Annotated[str | None, Header()] = None,
+):
+    """
+    Desbloquea a un usuario bloqueado por intentos fallidos (solo admin).
+
+    Desactiva los bloqueos activos del usuario y reinicia su contador de
+    intentos fallidos, permitiéndole iniciar sesión de nuevo.
+
+    Args:
+        username: Username del usuario a desbloquear
+        authorization: Header de autorización
+
+    Returns:
+        Mensaje de éxito
+
+    Raises:
+        HTTPException: Si no es admin, el usuario no existe o no estaba bloqueado.
+    """
+    admin_username = require_admin(authorization)
+
+    user = get_user_by_username(username)
+    if not user:
+        raise HTTPException(status_code=404, detail=USER_NOT_FOUND_DETAIL)
+
+    limiter = get_rate_limiter()
+    if not limiter:
+        raise HTTPException(status_code=503, detail=DB_UNAVAILABLE_DETAIL)
+
+    # El rate limiter trabaja con user_id (opaco). Tampoco se almacena el nombre
+    # del administrador: se guarda su user_id en 'unblocked_by'.
+    user_id = str(user.get("_id"))
+    admin_user_id = get_user_id(admin_username) or admin_username
+    unblocked = limiter.unblock(user_id, admin_user_id)
+    if not unblocked:
+        raise HTTPException(status_code=400, detail="User is not blocked")
+
+    # Trazabilidad: registrar el desbloqueo del usuario.
+    background_tasks.add_task(
+        log_admin_action,
+        action="unblock_user",
+        actor_user_id=get_user_id(admin_username) or admin_username,
+        actor_username=admin_username,
+        target_user_id=str(user.get("_id")),
+        target_username=username,
+        session_id=x_session_id,
+    )
+
+    return {
+        "message": "User unblocked successfully",
         "username": username
     }
 

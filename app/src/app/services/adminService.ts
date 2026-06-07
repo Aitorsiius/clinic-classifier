@@ -8,6 +8,7 @@ interface UserData {
   admin: boolean;
   audit: boolean;
   created_at?: string;
+  blocked?: boolean;
 }
 
 interface CreateUserPayload {
@@ -24,6 +25,29 @@ interface UpdateRolePayload {
 
 interface UpdatePasswordPayload {
   new_password: string;
+}
+
+/** Un intento de inicio de sesión fallido registrado para un usuario. */
+export interface FailedLoginAttempt {
+  ip_address: string | null;
+  user_agent?: string | null;
+  timestamp: string | null;
+}
+
+/** Información de bloqueo de un usuario (para el diálogo de desbloqueo). */
+export interface UserBlockInfo {
+  username: string;
+  blocked: boolean;
+  /** Número de veces que el usuario ha sido bloqueado por el mismo motivo. */
+  block_count: number;
+  /** Intentos de inicio de sesión fallidos con sus fechas, de más a menos reciente. */
+  failed_attempts: FailedLoginAttempt[];
+  /** Datos del bloqueo activo actual, si lo hay. */
+  current_block: {
+    ip_address: string | null;
+    blocked_at: string | null;
+    reason: string | null;
+  } | null;
 }
 
 const API_GATEWAY_URL = (import.meta as any).env.VITE_API_GATEWAY_URL || 'http://localhost:3000';
@@ -139,5 +163,41 @@ export async function deleteUser(token: string, username: string): Promise<void>
   if (!response.ok) {
     const data = await response.json();
     throw new Error(data.detail || 'Error al eliminar usuario');
+  }
+}
+
+/**
+ * Obtiene la información de bloqueo de un usuario: intentos de inicio de sesión
+ * fallidos con sus fechas y el número de veces que ha sido bloqueado.
+ */
+export async function getUserBlockInfo(token: string, username: string): Promise<UserBlockInfo> {
+  const response = await fetch(`${API_GATEWAY_URL}/api/admin/users/${username}/block-info`, {
+    method: 'GET',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`
+    }
+  });
+
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.detail || 'Error al obtener la información de bloqueo');
+  }
+
+  return response.json();
+}
+
+/**
+ * Desbloquea a un usuario bloqueado por intentos fallidos de inicio de sesión.
+ */
+export async function unblockUser(token: string, username: string): Promise<void> {
+  const response = await fetch(`${API_GATEWAY_URL}/api/admin/users/${username}/unblock`, {
+    method: 'POST',
+    headers: buildAdminHeaders(token)
+  });
+
+  if (!response.ok) {
+    const data = await response.json();
+    throw new Error(data.detail || 'Error al desbloquear usuario');
   }
 }

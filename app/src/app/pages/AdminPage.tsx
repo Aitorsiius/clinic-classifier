@@ -12,13 +12,24 @@ import { CreateUserDialog } from '../components/CreateUserDialog';
 import { ChangePasswordDialog } from '../components/ChangePasswordDialog';
 import { EditRolesDialog } from '../components/EditRolesDialog';
 import { DeleteUserDialog } from '../components/DeleteUserDialog';
-import { getUsers, createUser, updateUserPassword, updateUserRole, deleteUser } from '../services/adminService';
+import { UnblockUserDialog } from '../components/UnblockUserDialog';
+import {
+  getUsers,
+  createUser,
+  updateUserPassword,
+  updateUserRole,
+  deleteUser,
+  getUserBlockInfo,
+  unblockUser,
+  type UserBlockInfo,
+} from '../services/adminService';
 
 interface User {
   username: string;
   admin: boolean;
   audit: boolean;
   created_at?: string;
+  blocked?: boolean;
 }
 
 export default function AdminPage() {
@@ -36,12 +47,17 @@ export default function AdminPage() {
   const [changePasswordDialogOpen, setChangePasswordDialogOpen] = useState(false);
   const [editRolesDialogOpen, setEditRolesDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [unblockDialogOpen, setUnblockDialogOpen] = useState(false);
 
   // State para operaciones
   const [selectedUsername, setSelectedUsername] = useState<string | null>(null);
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [operationLoading, setOperationLoading] = useState(false);
   const [operationError, setOperationError] = useState<string | null>(null);
+
+  // State para el desbloqueo de usuarios
+  const [selectedBlockInfo, setSelectedBlockInfo] = useState<UserBlockInfo | null>(null);
+  const [blockInfoLoading, setBlockInfoLoading] = useState(false);
 
   // Verificar que es admin
   useEffect(() => {
@@ -206,6 +222,58 @@ export default function AdminPage() {
     setDeleteDialogOpen(true);
   };
 
+  // Abre el diálogo de desbloqueo y carga la información de bloqueo del usuario
+  // (intentos fallidos con sus fechas y nº de veces bloqueado).
+  const handleOpenUnblock = async (username: string) => {
+    setOperationError(null);
+    setSelectedUsername(username);
+    setSelectedBlockInfo(null);
+    setUnblockDialogOpen(true);
+
+    if (!token) {
+      setOperationError('No authentication token available');
+      return;
+    }
+
+    try {
+      setBlockInfoLoading(true);
+      const info = await getUserBlockInfo(token, username);
+      setSelectedBlockInfo(info);
+    } catch (err) {
+      let errorMessage = 'Error al cargar la información de bloqueo';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      setOperationError(errorMessage);
+      console.error('Error loading block info:', err);
+    } finally {
+      setBlockInfoLoading(false);
+    }
+  };
+
+  const handleUnblockUser = async (username: string) => {
+    try {
+      setOperationError(null);
+      setOperationLoading(true);
+      if (!token) {
+        throw new Error('No authentication token available');
+      }
+      await unblockUser(token, username);
+      incrementStat('usersUnblocked');
+      // Recargar usuarios para reflejar que ya no está bloqueado.
+      await loadUsers();
+    } catch (err) {
+      let errorMessage = 'Error al desbloquear usuario';
+      if (err instanceof Error) {
+        errorMessage = err.message;
+      }
+      setOperationError(errorMessage);
+      throw err;
+    } finally {
+      setOperationLoading(false);
+    }
+  };
+
   if (!isAuthenticated || !userData?.admin) {
     return null;
   }
@@ -248,6 +316,8 @@ export default function AdminPage() {
           onEditRoles={handleOpenEditRoles}
           onChangePassword={handleOpenChangePassword}
           onDelete={handleOpenDelete}
+          onUnblock={handleOpenUnblock}
+          onRefresh={loadUsers}
           currentUsername={userData?.username || ''}
         />
       </main>
@@ -283,6 +353,17 @@ export default function AdminPage() {
         onConfirm={handleDeleteUser}
         isLoading={operationLoading}
         error={operationError}
+      />
+
+      <UnblockUserDialog
+        open={unblockDialogOpen}
+        username={selectedUsername || ''}
+        blockInfo={selectedBlockInfo}
+        isLoadingInfo={blockInfoLoading}
+        isUnblocking={operationLoading}
+        error={operationError}
+        onOpenChange={setUnblockDialogOpen}
+        onConfirm={handleUnblockUser}
       />
     </div>
   );

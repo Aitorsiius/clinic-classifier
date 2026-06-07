@@ -28,6 +28,18 @@ política CORS y la agregación de respuestas.
 | POST | `/api/analyze-query` · `/api/correct-query` · `/api/process-query` | Procesado de consultas con LLM |
 | GET | `/api/search-history` | Historial de búsquedas del usuario |
 | `*` | `/api/admin/users...` | Gestión de usuarios (solo administradores) |
+| GET | `/api/admin/users/{username}/block-info` | Información de bloqueo de un usuario (admin) |
+| POST | `/api/admin/users/{username}/unblock` | Desbloqueo de un usuario bloqueado (admin) |
+
+## Rate limiting de inicio de sesión
+
+En `/api/login`, el gateway reenvía la **IP real del cliente** (la del socket, no una
+cabecera proporcionada por el cliente) al `auth-service` mediante `X-Forwarded-For` /
+`X-Real-IP`. Esto permite que el `auth-service` aplique el bloqueo por fuerza bruta (varios
+intentos fallidos en una ventana corta → cuenta bloqueada hasta que un administrador la
+desbloquee) y registre la IP del atacante. El bloqueo se gestiona por cuenta y, en base de
+datos, se identifica al usuario por su `user_id` (opaco), nunca por el `username`. Los
+endpoints `block-info` y `unblock` se delegan también en el `auth-service`.
 
 ## Variables de entorno
 

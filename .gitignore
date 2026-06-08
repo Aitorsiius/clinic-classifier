@@ -63,7 +63,9 @@ vertex-credentials.json
 # Docker
 docker-compose.override.yml
 
-# Временные файлы
 *.tmp
 *.bak
 *.backup
+
+*.tar
+*.sqlite

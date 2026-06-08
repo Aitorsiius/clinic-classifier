@@ -109,6 +109,9 @@ class SearchHistoryItem(BaseModel):
     results: Optional[list] = None
     used_ai_assistant: bool = False
     ai_suggestions: Optional[dict] = None
+    # Tiempo total (ms) de la búsqueda (con o sin IA), para restaurarlo al
+    # reabrir una búsqueda del historial.
+    search_time_ms: Optional[float] = None
     status: str
     top_k: Optional[int] = None
     session_id: str
@@ -259,6 +262,7 @@ async def get_search_history(
                 "results": search_doc.get("results", []),
                 "used_ai_assistant": search_doc.get("used_ai_assistant", False),
                 "ai_suggestions": search_doc.get("ai_suggestions"),
+                "search_time_ms": search_doc.get("search_time_ms"),
                 "status": search_doc.get("status", "success"),
                 "top_k": search_doc.get("top_k"),
                 "session_id": search_doc.get("session_id")

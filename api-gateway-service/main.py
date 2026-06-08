@@ -75,6 +75,9 @@ AUTH_SERVICE_UNAVAILABLE_DETAIL = "Auth service unavailable"
 class SearchRequest(BaseModel):
     query: str
     top_k: Optional[int] = 5
+    # Activa el pipeline de búsqueda con IA (primera fase LLM + bi-encoder +
+    # cross-encoder).
+    use_ai: bool = False
 
 class LoginRequest(BaseModel):
     username: str
@@ -100,6 +103,8 @@ class AuditBatchRequest(BaseModel):
     records: List[AuditRecordRequest]
     top_k: Optional[int] = 5
     algorithm: Optional[str] = "algoritmo1"
+    # Ejecuta la auditoría a través del pipeline de búsqueda con IA.
+    use_ai: bool = False
 
 # ==========================================
 # FUNCIONES DE AUTENTICACIÓN
@@ -193,6 +198,8 @@ async def log_audit(
     records_count: int,
     algorithm: Optional[str] = None,
     top_k: Optional[int] = None,
+    use_ai: bool = False,
+    total_time_ms: Optional[float] = None,
     ip_address: Optional[str] = None,
     status: str = "success",
     error_message: Optional[str] = None,
@@ -215,6 +222,8 @@ async def log_audit(
                     "records_count": records_count,
                     "algorithm": algorithm,
                     "top_k": top_k,
+                    "use_ai": use_ai,
+                    "total_time_ms": total_time_ms,
                     "ip_address": ip_address,
                     "description": f"Audit with {records_count} records",
                     "status": status,
@@ -480,7 +489,8 @@ async def audit_batch(
                 json={
                     "records": [r.model_dump() for r in request.records],
                     "top_k": request.top_k or 5,
-                    "algorithm": request.algorithm or "algoritmo1"
+                    "algorithm": request.algorithm or "algoritmo1",
+                    "use_ai": request.use_ai
                 },
                 headers={"Authorization": auth_header}
             )
@@ -504,12 +514,16 @@ async def audit_batch(
                         records_count=len(request.records),
                         algorithm=request.algorithm,
                         top_k=request.top_k,
+                        use_ai=request.use_ai,
+                        total_time_ms=result.get("total_time_ms"),
                         ip_address=get_client_ip(req) if req else "unknown",
                         status="success",
                         details={
                             "records_count": len(request.records),
                             "top_k": request.top_k,
-                            "algorithm": request.algorithm
+                            "algorithm": request.algorithm,
+                            "use_ai": request.use_ai,
+                            "total_time_ms": result.get("total_time_ms")
                         }
                     )
                 )
@@ -585,7 +599,8 @@ async def audit_batch_stream(
                     json={
                         "records": [r.model_dump() for r in request.records],
                         "top_k": request.top_k or 5,
-                        "algorithm": request.algorithm or "algoritmo1"
+                        "algorithm": request.algorithm or "algoritmo1",
+                        "use_ai": request.use_ai
                     },
                     headers={"Authorization": auth_header}
                 ) as response:
@@ -624,6 +639,8 @@ async def audit_batch_stream(
                     "conformity_percentage": audit_result.get("conformity_percentage"),
                     "top_k": audit_result.get("top_k"),
                     "algorithm": request.algorithm or "algoritmo1",
+                    "use_ai": request.use_ai,
+                    "total_time_ms": audit_result.get("total_time_ms"),
                     "findings": audit_result.get("findings", [])
                 }
                 
@@ -634,6 +651,8 @@ async def audit_batch_stream(
                         records_count=len(request.records),
                         algorithm=request.algorithm or "algoritmo1",
                         top_k=request.top_k or 5,
+                        use_ai=request.use_ai,
+                        total_time_ms=audit_result.get("total_time_ms"),
                         ip_address=get_client_ip(req) if req else "unknown",
                         status="success",
                         details=details

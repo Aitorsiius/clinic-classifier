@@ -219,78 +219,66 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       elapsedMs,
     });
 
-    // 2. Activar el overlay (despedida + estadísticas con animación de cartera)
-    setIsLoggingOut(true);
-
-    // 3. Cerrar la sesión en la API en segundo plano (no bloquea la animación)
+    // 2. Limpiar el estado de autenticación INMEDIATAMENTE para que cualquier
+    //    navegación por URL (botón atrás, etc.) ya vea la sesión como cerrada.
     const token = localStorage.getItem('auth_token');
     const sessionId = localStorage.getItem('session_id');
-    const apiLogout = (async () => {
-      if (token && sessionId) {
+
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_username');
+    localStorage.removeItem('user_data');
+    localStorage.removeItem('session_id');
+    localStorage.removeItem('user_id');
+
+    // Limpiar también sessionStorage para eliminar búsquedas y auditorías
+    sessionStorage.clear();
+
+    // Disparar evento personalizado para limpiar las vistas
+    window.dispatchEvent(new Event('auth:logout'));
+
+    setToken(null);
+    setUsername(null);
+    setUserData(null);
+    setIsAuthenticated(false);
+    setError(null);
+
+    // 3. Activar el overlay (despedida + estadísticas con animación de cartera)
+    setIsLoggingOut(true);
+
+    // 4. Cerrar la sesión en la API en segundo plano (no bloquea la animación).
+    //    El api-gateway ya se encarga de avisar al log-service internamente,
+    //    por lo que NO hay que llamar a /sessions/close directamente (evita 400).
+    if (token && sessionId) {
+      (async () => {
         try {
-          // Cerrar sesión en la API
           await fetch(`${API_GATEWAY_URL}/api/logout?session_id=${sessionId}`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,
               'Content-Type': 'application/json',
-            }
-          });
-
-          // Registrar logout en log-service
-          const logServiceUrl = import.meta.env.VITE_LOG_SERVICE_URL || 'http://localhost:8006';
-          await fetch(`${logServiceUrl}/sessions/close`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
             },
-            body: JSON.stringify({
-              session_id: sessionId
-            })
           });
         } catch (err) {
           console.error('Error logging out from API:', err);
         }
-      }
-    })();
-
-    try {
-      // 4. Mantener la despedida visible indefinidamente: la pantalla solo se
-      //    cierra cuando el usuario pulsa la X (skipLogoutDisplay resuelve esta
-      //    promesa). Así puede consultar sus estadísticas el tiempo que quiera.
-      await new Promise<void>((resolve) => {
-        displayResolverRef.current = resolve;
-      });
-      displayResolverRef.current = null;
-      // La llamada a la API ya corre en segundo plano; no la esperamos para que
-      // el cierre sea inmediato cuando el usuario pulsa la X.
-    } finally {
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('user_username');
-      localStorage.removeItem('user_data');
-      localStorage.removeItem('session_id');
-      localStorage.removeItem('user_id');
-      
-      // Limpiar también sessionStorage para eliminar búsquedas y auditorías
-      sessionStorage.clear();
-      
-      // Disparar evento personalizado para limpiar las vistas
-      window.dispatchEvent(new Event('auth:logout'));
-      
-      setToken(null);
-      setUsername(null);
-      setUserData(null);
-      setIsAuthenticated(false);
-      setError(null);
-
-      // Mantener el overlay mientras se navega y se reordena el layout,
-      // después desvanecerlo suavemente para revelar la vista ya recolocada.
-      setTimeout(() => {
-        setIsLoggingOut(false);
-        // Limpiar la instantánea una vez completado el desvanecimiento
-        setTimeout(() => setLogoutSummary(null), LOGOUT_FADE_MS + 100);
-      }, LOGOUT_FADE_MS + 100);
+      })();
     }
+
+    // 5. Mantener la despedida visible indefinidamente: la pantalla solo se
+    //    cierra cuando el usuario pulsa la X (skipLogoutDisplay resuelve esta
+    //    promesa). Así puede consultar sus estadísticas el tiempo que quiera.
+    await new Promise<void>((resolve) => {
+      displayResolverRef.current = resolve;
+    });
+    displayResolverRef.current = null;
+
+    // Mantener el overlay mientras se navega y se reordena el layout,
+    // después desvanecerlo suavemente para revelar la vista ya recolocada.
+    setTimeout(() => {
+      setIsLoggingOut(false);
+      // Limpiar la instantánea una vez completado el desvanecimiento
+      setTimeout(() => setLogoutSummary(null), LOGOUT_FADE_MS + 100);
+    }, LOGOUT_FADE_MS + 100);
   };
 
   const value: AuthContextType = {

@@ -140,12 +140,22 @@ class MedicalSearchEngine:
             print(f"ERROR en búsqueda exacta por código: {e}")
             return []
 
-    def search(self, user_query: str, top_k: int = 5):
+    def search(self, user_query: str, top_k: int = 5, enriched_query: str = None):
         """
         1. Intenta búsqueda exacta por código
         2. Si no encuentra, llama a Docker para vectorizar
         3. Busca candidatos en Qdrant
         4. Re-ordena (Rerank) con Cross-Encoder
+
+        Args:
+            user_query: Consulta original del usuario.
+            top_k: Número de resultados a devolver.
+            enriched_query: (Opcional) Texto enriquecido por la IA en la primera
+                fase del pipeline. Cuando se proporciona, se usa TANTO para la
+                recuperación (bi-encoder) COMO para el re-ranking (cross-encoder),
+                de modo que ambas fases comparan terminología técnica frente al
+                'search_text' técnico de la base. Si es None, el comportamiento es
+                idéntico al modo sin IA.
         """
         
         # --- PASO 0: INTENTO DE BÚSQUEDA EXACTA POR CÓDIGO ---
@@ -156,10 +166,14 @@ class MedicalSearchEngine:
             if exact_results:
                 print(f"[DIRECT MATCH] Código encontrado directamente: {query_upper}")
                 return exact_results
-        
+
+        # Texto que se usará para recuperar y re-rankear. En modo IA es el texto
+        # enriquecido; en modo normal es la consulta original del usuario.
+        retrieval_text = (enriched_query or "").strip() or user_query
+
         # --- PASO 1: RECUPERACIÓN (Retrieval) ---
         # E5 necesita el prefijo 'query: '
-        query_text = f"query: {user_query}"
+        query_text = f"query: {retrieval_text}"
 
         # Llamamos al servicio de embeddings para obtener el vector
         query_vector = self._get_vector_from_docker(query_text)
@@ -196,7 +210,10 @@ class MedicalSearchEngine:
         # --- PASO 3: RE-RANKING ---
         # Llamar al servicio de reranker
         # Formato esperado: [[query, doc1], [query, doc2], ...]
-        pairs = [[user_query, doc] for doc in documents]
+        # En modo IA usamos el MISMO texto enriquecido que en la recuperación, de
+        # forma que el cross-encoder compara terminología técnica frente al
+        # 'search_text' técnico.
+        pairs = [[retrieval_text, doc] for doc in documents]
         rerank_payload = {"inputs": pairs}
         
         try:

@@ -58,6 +58,10 @@ interface SessionContextType {
   setUseAI: (use: boolean) => void;
   aiAnalysis: any;
   setAiAnalysis: (analysis: any) => void;
+  // Tiempo total (ms) de la última búsqueda devuelto por el backend (con o sin
+  // IA). Se muestra junto a los resultados.
+  searchTimeMs: number | null;
+  setSearchTimeMs: (ms: number | null) => void;
   isLoading: boolean;
   setIsLoading: (loading: boolean) => void;
 
@@ -70,10 +74,18 @@ interface SessionContextType {
   setAuditAlgorithm: (algo: string) => void;
   auditTopK: number;
   setAuditTopK: (k: number) => void;
+  // Ejecuta la auditoría a través del pipeline de búsqueda con IA.
+  auditUseAI: boolean;
+  setAuditUseAI: (use: boolean) => void;
   isProcessing: boolean;
   setIsProcessing: (processing: boolean) => void;
   auditProgress: number;
   setAuditProgress: (progress: number) => void;
+  // Marca de tiempo (ms epoch) de inicio de la auditoría en curso. Permite
+  // mostrar un cronómetro en vivo en la barra de progreso que sobrevive a la
+  // navegación entre vistas.
+  auditStartTime: number | null;
+  setAuditStartTime: (ts: number | null) => void;
   auditReport: any;
   setAuditReport: (report: any) => void;
   // Aviso visual: una auditoría finalizó mientras el usuario estaba en otra vista
@@ -102,6 +114,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [topK, setTopK] = useState(5);
   const [useAI, setUseAI] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
+  const [searchTimeMs, setSearchTimeMs] = useState<number | null>(null);
   const [isLoading, setIsLoading] = useState(false);
 
   // Auditoría
@@ -109,8 +122,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [fileName, setFileName] = useState('');
   const [auditAlgorithm, setAuditAlgorithm] = useState('algoritmo1');
   const [auditTopK, setAuditTopK] = useState(5);
+  const [auditUseAI, setAuditUseAI] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [auditProgress, setAuditProgress] = useState(0);
+  const [auditStartTime, setAuditStartTime] = useState<number | null>(null);
   const [auditReport, setAuditReport] = useState<any>(null);
   // Aviso pendiente de "auditoría finalizada" para la barra de navegación
   const [auditNotification, setAuditNotification] = useState(false);
@@ -140,13 +155,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setTopK(5);
     setUseAI(false);
     setAiAnalysis(null);
+    setSearchTimeMs(null);
     setIsLoading(false);
     setCSVData(null);
     setFileName('');
     setAuditAlgorithm('algoritmo1');
     setAuditTopK(5);
+    setAuditUseAI(false);
     setIsProcessing(false);
     setAuditProgress(0);
+    setAuditStartTime(null);
     setAuditReport(null);
     setAuditNotification(false);
     setSearchNotification(false);
@@ -206,13 +224,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const savedTopK = sessionStorage.getItem('session_topK');
     const savedUseAI = sessionStorage.getItem('session_useAI');
     const savedAiAnalysis = sessionStorage.getItem('session_aiAnalysis');
+    const savedSearchTimeMs = sessionStorage.getItem('session_searchTimeMs');
     const savedIsLoading = sessionStorage.getItem('session_isLoading');
     const savedCSVData = sessionStorage.getItem('session_csvData');
     const savedFileName = sessionStorage.getItem('session_fileName');
     const savedAuditAlgorithm = sessionStorage.getItem('session_auditAlgorithm');
     const savedAuditTopK = sessionStorage.getItem('session_auditTopK');
+    const savedAuditUseAI = sessionStorage.getItem('session_auditUseAI');
     const savedIsProcessing = sessionStorage.getItem('session_isProcessing');
     const savedAuditProgress = sessionStorage.getItem('session_auditProgress');
+    const savedAuditStartTime = sessionStorage.getItem('session_auditStartTime');
     const savedAuditReport = sessionStorage.getItem('session_auditReport');
     const savedAuditNotification = sessionStorage.getItem('session_auditNotification');
     const savedSearchNotification = sessionStorage.getItem('session_searchNotification');
@@ -223,13 +244,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (savedTopK) setTopK(parseInt(savedTopK));
     if (savedUseAI) setUseAI(savedUseAI === 'true');
     if (savedAiAnalysis) setAiAnalysis(JSON.parse(savedAiAnalysis));
+    if (savedSearchTimeMs) setSearchTimeMs(savedSearchTimeMs === 'null' ? null : parseFloat(savedSearchTimeMs));
     if (savedIsLoading) setIsLoading(savedIsLoading === 'true');
     if (savedCSVData) setCSVData(JSON.parse(savedCSVData));
     if (savedFileName) setFileName(savedFileName);
     if (savedAuditAlgorithm) setAuditAlgorithm(savedAuditAlgorithm);
     if (savedAuditTopK) setAuditTopK(parseInt(savedAuditTopK));
+    if (savedAuditUseAI) setAuditUseAI(savedAuditUseAI === 'true');
     if (savedIsProcessing) setIsProcessing(savedIsProcessing === 'true');
     if (savedAuditProgress) setAuditProgress(parseInt(savedAuditProgress));
+    if (savedAuditStartTime) setAuditStartTime(savedAuditStartTime === 'null' ? null : parseInt(savedAuditStartTime, 10));
     if (savedAuditReport) setAuditReport(JSON.parse(savedAuditReport));
     if (savedAuditNotification) setAuditNotification(savedAuditNotification === 'true');
     if (savedSearchNotification) setSearchNotification(savedSearchNotification === 'true');
@@ -272,6 +296,10 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [aiAnalysis]);
 
   useEffect(() => {
+    sessionStorage.setItem('session_searchTimeMs', searchTimeMs === null ? 'null' : String(searchTimeMs));
+  }, [searchTimeMs]);
+
+  useEffect(() => {
     sessionStorage.setItem('session_isLoading', isLoading.toString());
   }, [isLoading]);
 
@@ -296,12 +324,20 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   }, [auditTopK]);
 
   useEffect(() => {
+    sessionStorage.setItem('session_auditUseAI', auditUseAI.toString());
+  }, [auditUseAI]);
+
+  useEffect(() => {
     sessionStorage.setItem('session_isProcessing', isProcessing.toString());
   }, [isProcessing]);
 
   useEffect(() => {
     sessionStorage.setItem('session_auditProgress', auditProgress.toString());
   }, [auditProgress]);
+
+  useEffect(() => {
+    sessionStorage.setItem('session_auditStartTime', auditStartTime === null ? 'null' : String(auditStartTime));
+  }, [auditStartTime]);
 
   useEffect(() => {
     if (auditReport) {
@@ -331,13 +367,16 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setTopK(5);
     setUseAI(false);
     setAiAnalysis(null);
+    setSearchTimeMs(null);
     setIsLoading(false);
     setCSVData(null);
     setFileName('');
     setAuditAlgorithm('algoritmo1');
     setAuditTopK(5);
+    setAuditUseAI(false);
     setIsProcessing(false);
     setAuditProgress(0);
+    setAuditStartTime(null);
     setAuditReport(null);
     setAuditNotification(false);
     setSearchNotification(false);
@@ -358,6 +397,8 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setUseAI,
     aiAnalysis,
     setAiAnalysis,
+    searchTimeMs,
+    setSearchTimeMs,
     isLoading,
     setIsLoading,
     csvData,
@@ -368,10 +409,14 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setAuditAlgorithm,
     auditTopK,
     setAuditTopK,
+    auditUseAI,
+    setAuditUseAI,
     isProcessing,
     setIsProcessing,
     auditProgress,
     setAuditProgress,
+    auditStartTime,
+    setAuditStartTime,
     auditReport,
     setAuditReport,
     auditNotification,

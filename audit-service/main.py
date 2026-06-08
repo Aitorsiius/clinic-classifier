@@ -74,6 +74,8 @@ class AuditBatchRequest(BaseModel):
     records: List[AuditRecordRequest]
     algorithm: Optional[str] = "algoritmo1"
     top_k: Optional[int] = 5
+    # Ejecuta la auditoría a través del pipeline de búsqueda con IA.
+    use_ai: bool = False
 
 class AuditResult(BaseModel):
     """Resultado individual de auditoría"""
@@ -97,6 +99,8 @@ class AuditReportResponse(BaseModel):
     total_mismatch: int
     conformity_percentage: float
     top_k: Optional[int] = 5
+    # Tiempo total (ms) del lote de auditoría (con o sin IA).
+    total_time_ms: Optional[float] = None
     findings: List[AuditResult]
 
 # ==========================================
@@ -238,7 +242,8 @@ async def audit_batch_stream(
                     diagnosis_records, 
                     algorithm=request.algorithm or "algoritmo1",
                     top_k=request.top_k or 5, 
-                    progress_callback=progress_callback
+                    progress_callback=progress_callback,
+                    use_ai=request.use_ai
                 )
             )
             
@@ -281,6 +286,7 @@ async def audit_batch_stream(
                 "total_mismatch": report.total_mismatch,
                 "conformity_percentage": report.conformity_percentage,
                 "top_k": request.top_k or 5,
+                "total_time_ms": round(report.total_time_ms, 2),
                 "findings": findings
             }
             
@@ -350,7 +356,7 @@ async def audit_batch(
         # 3. Ejecutar auditoría localmente
         search_engine = GatewaySearchEngine(API_GATEWAY_URL)
         auditor = CodeAuditor(search_engine)
-        report = auditor.audit_batch(diagnosis_records, algorithm=request.algorithm or "algoritmo1", top_k=request.top_k or 5)
+        report = auditor.audit_batch(diagnosis_records, algorithm=request.algorithm or "algoritmo1", top_k=request.top_k or 5, use_ai=request.use_ai)
         
         # 4. Formatear respuesta
         findings = [
@@ -377,6 +383,7 @@ async def audit_batch(
             total_mismatch=report.total_mismatch,
             conformity_percentage=report.conformity_percentage,
             top_k=request.top_k or 5,
+            total_time_ms=round(report.total_time_ms, 2),
             findings=findings
         )
         
@@ -392,12 +399,16 @@ async def audit_batch(
                             "records_count": len(diagnosis_records),
                             "algorithm": request.algorithm or "algoritmo1",
                             "top_k": request.top_k or 5,
+                            "use_ai": request.use_ai,
+                            "total_time_ms": round(report.total_time_ms, 2),
                             "status": "success",
                             "details": {
                                 "total_correct": report.total_correct,
                                 "total_partial_match": report.total_partial_match,
                                 "total_mismatch": report.total_mismatch,
                                 "conformity_percentage": report.conformity_percentage,
+                                "use_ai": request.use_ai,
+                                "total_time_ms": round(report.total_time_ms, 2),
                                 "findings": [
                                     {
                                         "patient_id": f.patient_id,

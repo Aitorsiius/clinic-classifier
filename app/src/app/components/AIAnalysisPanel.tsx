@@ -1,22 +1,28 @@
-import { ChevronRight, Copy, Check } from 'lucide-react';
+import { ChevronRight, Copy, Check, Stethoscope, Lightbulb } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 
-interface AIAnalysis {
-  original_query: string;
-  corrected_query: string;
-  analysis: {
-    primary_symptoms: string[];
-    secondary_symptoms: string[];
-    key_findings: string[];
-    search_keywords: string[];
-    clinical_context: string;
-  };
-  processing_time_ms: number;
+/**
+ * Bloque del asistente inteligente devuelto por la primera fase del pipeline
+ * de IA. Es independiente de la lista de resultados de clasificación.
+ *
+ * - `diagnostico`: interpretación clínica en lenguaje natural de lo que el
+ *   usuario ha introducido.
+ * - `consejos_mejora`: información clínica AUSENTE que, de aportarse, afinaría
+ *   la clasificación (lateralidad, temporalidad del contacto, etc.).
+ * - `enriched_query`: texto técnico que se envió al buscador (informativo).
+ */
+export interface AIAssistant {
+  diagnostico: string;
+  consejos_mejora: string[];
+  enriched_query?: string;
+  is_valid_medical_query?: boolean;
+  processing_time_ms?: number;
+  original_query?: string;
 }
 
 interface AIAnalysisPanelProps {
-  data: AIAnalysis;
+  data: AIAssistant;
   shouldCollapse?: boolean;
 }
 
@@ -48,14 +54,15 @@ export function AIAnalysisPanel({ data, shouldCollapse = false }: AIAnalysisPane
     expanded: { height: 'auto', opacity: 1, transition: { duration: 0.4, ease: 'easeInOut' } },
   };
 
-  function capitalize(str: string): string {
-    return str.charAt(0).toUpperCase() + str.slice(1);
-  }
-
   const cardVariants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
   };
+
+  // El diagnóstico está vacío o la consulta no es clínicamente interpretable.
+  const hasDiagnosis = Boolean(data.diagnostico && data.diagnostico.trim());
+  const tips = Array.isArray(data.consejos_mejora) ? data.consejos_mejora : [];
+  const isInvalid = data.is_valid_medical_query === false || !hasDiagnosis;
 
   return (
     <motion.div
@@ -88,121 +95,88 @@ export function AIAnalysisPanel({ data, shouldCollapse = false }: AIAnalysisPane
             className="overflow-hidden"
           >
             <div className="mt-6 pt-4 border-t border-slate-200 space-y-4">
-          {/* Nota informativa */}
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
-            <p className="text-xs text-blue-800 font-medium">
-              💡 Este análisis es un asistente independiente para ayudarte a encontrar el código CIE-10 ES correcto. 
-              No afecta la clasificación automática de resultados.
-            </p>
-          </div>
-
-          {/* Validar si hay datos de análisis válidos */}
-          {!data.analysis || 
-           (!data.corrected_query && 
-            (!data.analysis.primary_symptoms || data.analysis.primary_symptoms.length === 0) &&
-            (!data.analysis.secondary_symptoms || data.analysis.secondary_symptoms.length === 0) &&
-            (!data.analysis.search_keywords || data.analysis.search_keywords.length === 0)) ? (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 text-center">
-              <p className="text-sm font-medium text-amber-800 mb-2">⚠️ No se pudo analizar el diagnóstico</p>
-              <p className="text-xs text-amber-700">
-                El texto del diagnóstico proporcionado es demasiado pobre o no contiene información médica suficiente para realizar un análisis detallado. 
-                Intenta con una descripción más completa.
-              </p>
-            </div>
-          ) : (
-            <>
-          {/* Consulta Original vs Normalizada */}
-          <div className="space-y-2">
-            <div className="text-sm font-semibold text-slate-600">Consulta Original:</div>
-            <div className="bg-white rounded-lg p-3 border border-slate-200">
-              <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{data.original_query}</p>
-            </div>
-          </div>
-
-          {/* Análisis Clínico - Síntomas */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Síntomas Primarios */}
-            {data.analysis.primary_symptoms && data.analysis.primary_symptoms.length > 0 && (
-              <div className="bg-white rounded-lg p-3 border border-slate-200">
-                <p className="text-xs font-semibold text-red-600 mb-2">Síntomas Primarios:</p>
-                <ul className="space-y-1">
-                  {data.analysis.primary_symptoms.map((symptom, idx) => (
-                    <li key={idx} className="text-sm text-slate-700 flex items-center justify-start gap-2">
-                      <span className="text-red-500 flex-shrink-0 text-center w-4">•</span>
-                      <span>{capitalize(symptom)}</span>
-                    </li>
-                  ))}
-                </ul>
+              {/* Nota informativa */}
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
+                <p className="text-xs text-blue-800 font-medium">
+                  💡 Este asistente interpreta tu texto y sugiere cómo mejorarlo. Es independiente
+                  de la clasificación automática: los resultados CIE-10-ES se calculan aparte.
+                </p>
               </div>
-            )}
 
-            {/* Síntomas Secundarios */}
-            {data.analysis.secondary_symptoms && data.analysis.secondary_symptoms.length > 0 && (
-              <div className="bg-white rounded-lg p-3 border border-slate-200">
-                <p className="text-xs font-semibold text-amber-600 mb-2">Síntomas Secundarios:</p>
-                <ul className="space-y-1">
-                  {data.analysis.secondary_symptoms.map((symptom, idx) => (
-                    <li key={idx} className="text-sm text-slate-700 flex items-center justify-start gap-2">
-                      <span className="text-amber-500 flex-shrink-0 text-center w-4">•</span>
-                      <span>{capitalize(symptom)}</span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
+              {isInvalid ? (
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-6 text-center">
+                  <p className="text-sm font-medium text-amber-800 mb-2">⚠️ No se pudo interpretar el diagnóstico</p>
+                  <p className="text-xs text-amber-700">
+                    El texto proporcionado es demasiado pobre o no contiene información clínica
+                    suficiente. Intenta describir el cuadro con más detalle (síntomas, localización,
+                    evolución).
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* Diagnóstico interpretado */}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                        <Stethoscope className="w-4 h-4 text-purple-600" />
+                        Diagnóstico interpretado:
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopy(data.diagnostico, 'diagnostico');
+                        }}
+                        className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
+                      >
+                        {copiedText === 'diagnostico' ? (
+                          <>
+                            <Check className="w-4 h-4" />
+                            Copiado
+                          </>
+                        ) : (
+                          <>
+                            <Copy className="w-4 h-4" />
+                            Copiar
+                          </>
+                        )}
+                      </button>
+                    </div>
+                    <div className="bg-white rounded-lg p-3 border border-purple-200">
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{data.diagnostico}</p>
+                    </div>
+                  </div>
 
-            {/* Contexto Clínico - ELIMINADO */}
-          </div>
-
-          {/* Consulta Mejorada / Normalizada */}
-          {data.corrected_query && data.corrected_query !== data.original_query && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold text-slate-600">Consulta Mejorada:</div>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleCopy(data.corrected_query, 'improved-query');
-                  }}
-                  className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
-                >
-                  {copiedText === 'improved-query' ? (
-                    <>
-                      <Check className="w-4 h-4" />
-                      Copiado
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-4 h-4" />
-                      Copiar
-                    </>
-                  )}
-                </button>
-              </div>
-              <div className="bg-white rounded-lg p-3 border border-purple-200">
-                <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{data.corrected_query}</p>
-              </div>
-            </div>
-          )}
-
-          {/* Palabras Clave */}
-          {data.analysis.search_keywords && data.analysis.search_keywords.length > 0 && (
-            <div className="space-y-2">
-              <div className="text-sm font-semibold text-slate-600">Palabras Clave para Búsqueda:</div>
-              <div className="flex flex-wrap gap-2">
-                {data.analysis.search_keywords.map((keyword, idx) => (
-                  <span
-                    key={idx}
-                    className="inline-block bg-purple-100 text-purple-700 text-xs font-medium px-3 py-1 rounded-full border border-purple-200"
-                  >
-                    {capitalize(keyword)}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-            </>
-          )}
+                  {/* Consejos de mejora */}
+                  <div className="space-y-2">
+                    <div className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                      <Lightbulb className="w-4 h-4 text-amber-500" />
+                      Consejos para mejorar la consulta:
+                    </div>
+                    {tips.length > 0 ? (
+                      <ul className="space-y-2">
+                        {tips.map((tip, idx) => (
+                          <li
+                            key={idx}
+                            className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg p-3"
+                          >
+                            <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-amber-200 text-xs font-semibold text-amber-800">
+                              {idx + 1}
+                            </span>
+                            <span className="text-sm text-slate-700">{tip}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    ) : (
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                        <p className="text-xs text-green-800 font-medium">
+                          La consulta es suficientemente completa. No se detectó información
+                          relevante faltante.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
             </div>
           </motion.div>
         )}

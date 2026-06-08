@@ -62,166 +62,6 @@ ALLOWED_ORIGINS = [
 vertexai.init(project=PROJECT_ID, location=LOCATION)
 model = GenerativeModel("gemini-2.5-flash")
 
-MEDICAL_ACRONYMS = {
-    # Cardiología
-    "IAM": "Infarto Agudo de Miocardio",
-    "HTA": "Hipertensión Arterial",
-    "ICC": "Insuficiencia Cardíaca Congestiva",
-    "ICA": "Insuficiencia Cardíaca Aguda",
-    "ACV": "Accidente Cerebrovascular",
-    "TSV": "Taquicardia Supraventricular",
-    "FA": "Fibrilación Auricular",
-    "BAV": "Bloqueo Auriculoventricular",
-    "EAM": "Evento Agudo de Miocardio",
-    
-    # Endocrinología
-    "DM": "Diabetes Mellitus",
-    "DMT1": "Diabetes Mellitus Tipo 1",
-    "DMT2": "Diabetes Mellitus Tipo 2",
-    "HbA1c": "Hemoglobina Glucosilada",
-    
-    # Respiratorio
-    "EPOC": "Enfermedad Pulmonar Obstructiva Crónica",
-    "SDRA": "Síndrome de Dificultad Respiratoria Aguda",
-    "TEP": "Tromboembolismo Pulmonar",
-    "NAC": "Neumonía Adquirida en la Comunidad",
-    "TIRS": "Síndrome de Respuesta Inflamatoria Sistémica",
-    "TBC": "Tuberculosis",
-    
-    # Gastrointestinal
-    "EII": "Enfermedad Inflamatoria Intestinal",
-    "EC": "Enfermedad de Crohn",
-    "RCU": "Retocolitis Ulcerosa",
-    "ERGE": "Enfermedad por Reflujo Gastroesofágico",
-    "GEA": "Gastroenteritis Aguda",
-    "PUD": "Úlcera Péptica",
-    
-    # Neurología
-    "ELA": "Esclerosis Lateral Amiotrófica",
-    "EM": "Esclerosis Múltiple",
-    "EA": "Enfermedad de Alzheimer",
-    "EP": "Enfermedad de Parkinson",
-    "TCE": "Traumatismo Craneoencefálico",
-    "SGB": "Síndrome de Guillain-Barré",
-    "HSV": "Virus del Herpes Simple",
-    
-    # Hematología
-    "LLA": "Leucemia Linfoblástica Aguda",
-    "LLC": "Leucemia Linfocítica Crónica",
-    "LM": "Leucemia Mieloide",
-    "DIC": "Coagulopatía de Consumo",
-    "PTI": "Púrpura Trombocitopénica Idiopática",
-    
-    # Oncología
-    "CA": "Cáncer",
-    "CAP": "Cáncer de Próstata",
-    "CAM": "Cáncer de Mama",
-    "CCP": "Cáncer Colorrectal",
-    "CMC": "Carcinoma Medular de Colon",
-    "CHC": "Carcinoma Hepatocelular",
-    "LQMA": "Linfoma de Hodgkin",
-    
-    # Infectología
-    "VIH": "Virus de Inmunodeficiencia Humana",
-    "SIDA": "Síndrome de Inmunodeficiencia Adquirida",
-    "CMV": "Citomegalovirus",
-    "FAA": "Fiebre Amarilla",
-    "DVG": "Dengue",
-    "CVD": "COVID-19",
-    "ITU": "Infección del Tracto Urinario",
-    "UPD": "Sepsis",
-    
-    # Nefología
-    "IRA": "Insuficiencia Renal Aguda",
-    "IRC": "Insuficiencia Renal Crónica",
-    "ERC": "Enfermedad Renal Crónica",
-    "GN": "Glomerulonefritis",
-    "SN": "Síndrome Nefrótico",
-    "GES": "Glomerulonefritis Extracapilar Rápidamente Progresiva",
-    
-    # Reumatología
-    "AR": "Artritis Reumatoide",
-    "LES": "Lupus Eritematoso Sistémico",
-    "AE": "Artritis Espondilitis",
-    "ESC": "Esclerodermia",
-    "SAE": "Síndrome Antifosfolípido",
-    "GCA": "Arteritis Temporal",
-    
-    # Endocrino-Metabólico
-    "TSH": "Hormona Estimulante de la Tiroides",
-    "T3": "Triyodotironina",
-    "T4": "Tiroxina",
-    "HT": "Hipotiroidismo",
-    "HTS": "Hipertiroidismo",
-    "OB": "Obesidad",
-    
-    # Dermatología
-    "TM": "Melanoma",
-    "PEP": "Psoriasis",
-    "ED": "Eczema Dermatitis",
-    "UI": "Urticaria",
-    "AE": "Acné",
-    
-    # Oftalmología
-    "GLC": "Glaucoma",
-    "DRP": "Degeneración Macular Relacionada con la Edad",
-    "RD": "Retinopatía Diabética",
-    "OAL": "Oftalmología",
-    "CV": "Cataratas",
-    
-    # Otorrinolaringología
-    "ORL": "Otorrinolaringología",
-    "OMS": "Otitis Media Supurativa",
-    "SV": "Sinusitis",
-    "FA": "Faringitis",
-    "LA": "Laringitis",
-    
-    # Ginecología-Obstetricia
-    "EPI": "Enfermedad Pélvica Inflamatoria",
-    "EOG": "Endometriosis",
-    "SOP": "Síndrome de Ovario Poliquístico",
-    "VPH": "Virus del Papiloma Humano",
-    "FIC": "Fibromas",
-    "EME": "Embarazo Ectópico",
-    
-    # Pediatría
-    "SDR": "Síndrome de Dificultad Respiratoria",
-    "DBP": "Displasia Broncopulmonar",
-    "PIC": "Parálisis Infantil Cerebral",
-    "EA": "Enfermedad de Perthes",
-    
-    # Psiquiatría
-    "TDM": "Trastorno Depresivo Mayor",
-    "TA": "Trastorno de Ansiedad",
-    "TDAH": "Trastorno por Déficit de Atención e Hiperactividad",
-    "TAB": "Trastorno Afectivo Bipolar",
-    "TPA": "Trastorno de Personalidad Antisocial",
-    "TDC": "Trastorno de Conducta",
-    
-    # Anestesiología
-    "ASA": "Clasificación de Riesgo Anestésico",
-    "UCI": "Unidad de Cuidados Intensivos",
-    "VMI": "Ventilación Mecánica Invasiva",
-    "EMG": "Electromiografía",
-    
-    # General
-    "RX": "Radiografía",
-    "TC": "Tomografía Computarizada",
-    "RM": "Resonancia Magnética",
-    "US": "Ultrasonido",
-    "EKG": "Electrocardiograma",
-    "PCR": "Proteína C Reactiva",
-    "VSG": "Velocidad de Sedimentación Globular",
-    "FC": "Frecuencia Cardíaca",
-    "FA": "Frecuencia Alimentaria",
-    "PA": "Presión Arterial",
-    "PAS": "Presión Arterial Sistólica",
-    "PAD": "Presión Arterial Diastólica",
-    "FR": "Frecuencia Respiratoria",
-    "Sat": "Saturación de Oxígeno",
-    "IMC": "Índice de Masa Corporal",
-}
-
 class QueryRequest(BaseModel):
     query: str
 
@@ -327,6 +167,106 @@ Consulta: {query}"""
     except Exception:
         return {"corrected_query": query, "corrections": {}, "is_valid_medical_query": True}
 
+
+def ai_search_assist(query: str) -> dict:
+    """Primera fase del pipeline de búsqueda con IA.
+
+    Con UNA sola llamada al modelo se obtiene:
+      - diagnostico: interpretación clínica en lenguaje natural de lo que el
+        usuario ha introducido.
+      - consejos_mejora: información clínica AUSENTE que, de aportarse, afinaría
+        la clasificación (lateralidad, temporalidad del contacto, agudo/crónico,
+        etiología, localización anatómica, etc.).
+      - enriched_query: texto técnico DENSO en el estilo de las descripciones
+        CIE-10-ES (descripción clínica + sinónimos + términos de inclusión) que
+        se enviará al bi-encoder y al cross-encoder ya existentes. NO incluye
+        códigos: solo terminología clínica estándar para mejorar el "match".
+
+    El objetivo es cerrar la brecha semántica entre el lenguaje coloquial del
+    usuario y el texto técnico-jerárquico indexado en la base vectorial. La IA
+    se usa SOLO en esta fase; el re-ranking lo sigue haciendo el cross-encoder.
+    """
+    prompt = f"""Eres un experto en codificación clínica CIE-10-ES. Tu tarea NO es asignar el
+código final, sino TRADUCIR y ENRIQUECER el texto del usuario para que un buscador
+semántico (embeddings + cross-encoder) encuentre los códigos correctos.
+
+Las descripciones de la base de datos siguen un estilo técnico y jerárquico, por
+ejemplo: "ENFERMEDADES INFECCIOSAS INTESTINALES Cólera debido a Vibrio cholerae 01".
+Los códigos muy parecidos se diferencian por EJES DE DESEMPATE: localización
+anatómica, lateralidad (derecho/izquierdo/bilateral), temporalidad del contacto
+(inicial/sucesivo/secuela), agudo/crónico, etiología, severidad y presencia o
+ausencia de complicaciones.
+
+INSTRUCCIONES:
+1. "diagnostico": redacta una frase clínica técnica, neutra y precisa de lo que
+   presenta el paciente. NO inventes datos que el usuario no haya dado; si algo es
+   ambiguo, no lo afirmes.
+2. "enriched_query": un párrafo DENSO que imite el estilo de las descripciones
+   CIE-10-ES (descripción clínica + sinónimos médicos + términos de inclusión).
+   Debe sonar a manual de codificación, NO a lenguaje coloquial. Usa terminología
+   estándar en español. NUNCA incluyas códigos, números de clasificación ni siglas.
+3. "consejos_mejora": revisa la consulta y detecta qué INFORMACIÓN CLAVE falta para
+   elegir un código único. Fíjate específicamente en estos ejes (menciona solo los
+   que NO estén ya especificados por el usuario):
+   - Localización anatómica exacta (hueso/órgano y región: proximal, distal, lóbulo,
+     segmento, cara, etc.).
+   - Lateralidad: derecho, izquierdo o bilateral.
+   - Temporalidad del contacto asistencial: contacto inicial, contacto sucesivo o
+     secuela (clave en traumatismos; cambia el último carácter del código).
+   - Evolución: agudo, crónico o reagudizado; tiempo de evolución.
+   - Etiología o causa: traumática, infecciosa (agente concreto), tumoral, isquémica,
+     idiopática, medicamentosa, etc.
+   - Severidad o grado: leve/moderado/grave, estadio, % afectado, escala clínica.
+   - Complicaciones o manifestaciones asociadas (con/sin complicación específica).
+   - Contexto fisiológico cuando aplique: trimestre de embarazo, edad gestacional,
+     tipo de parto, etc.
+   Para cada dato ausente RELEVANTE, redacta UN consejo accionable y breve dirigido
+   al usuario ("Indica…", "Especifica…", "Confirma…"). Ordena los consejos por
+   impacto en el código (lateralidad y temporalidad primero). Como máximo 5 consejos.
+   Si la consulta ya define todos los ejes relevantes, devuelve una lista vacía.
+4. "is_valid_medical_query": false si el texto no es una consulta clínica
+   interpretable (en ese caso deja "diagnostico" y "enriched_query" vacíos y
+   "consejos_mejora" vacío).
+5. NO devuelvas códigos CIE-10. Responde EXCLUSIVAMENTE con el JSON, sin texto extra.
+
+Formato de salida (JSON estricto):
+{{"diagnostico": "", "enriched_query": "", "consejos_mejora": [], "is_valid_medical_query": true}}
+
+EJEMPLO (referencia de estilo y nivel de detalle):
+Consulta del usuario: "fractura muñeca izquierda, primera vez que viene"
+Respuesta:
+{{"diagnostico": "Fractura cerrada del extremo distal del radio izquierdo, primer contacto asistencial.", "enriched_query": "Fractura de la extremidad inferior del radio izquierdo, fractura distal de antebrazo, fractura de la muñeca, lesión traumática ósea de la región distal del radio, contacto inicial para fractura cerrada.", "consejos_mejora": ["Confirma el tipo de contacto: inicial, sucesivo o secuela (cambia el código).", "Indica si la fractura es abierta o cerrada.", "Especifica si existe desplazamiento o conminución de los fragmentos.", "Detalla el mecanismo de la lesión (caída, traumatismo directo, etc.)."], "is_valid_medical_query": true}}
+
+Consulta del usuario: {query}"""
+    response = call_gemini(prompt)
+    fallback = {
+        "diagnostico": "",
+        "enriched_query": "",
+        "consejos_mejora": [],
+        "is_valid_medical_query": True,
+    }
+    try:
+        json_start = response.find('{')
+        json_end = response.rfind('}') + 1
+        if json_start != -1 and json_end > json_start:
+            data = json.loads(response[json_start:json_end])
+            # Normalizar tipos por robustez frente a respuestas inesperadas.
+            consejos = data.get("consejos_mejora", [])
+            if isinstance(consejos, str):
+                consejos = [consejos] if consejos.strip() else []
+            elif not isinstance(consejos, list):
+                consejos = []
+            return {
+                "diagnostico": str(data.get("diagnostico", "") or "").strip(),
+                "enriched_query": str(data.get("enriched_query", "") or "").strip(),
+                "consejos_mejora": [str(c).strip() for c in consejos if str(c).strip()],
+                "is_valid_medical_query": bool(data.get("is_valid_medical_query", True)),
+            }
+        return fallback
+    except Exception:
+        return fallback
+
+
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "llm-query-processor"}
@@ -351,6 +291,25 @@ async def process(request: QueryRequest):
         "corrected_query": corrected_query,
         "analysis": analysis,
         "processing_time_ms": processing_time_ms
+    }
+
+@app.post("/ai-search")
+async def ai_search(request: QueryRequest):
+    """Primera fase del pipeline de búsqueda con IA (una sola llamada al LLM).
+
+    Devuelve el bloque del asistente (diagnostico + consejos_mejora) y el
+    enriched_query que alimentará al bi-encoder y al cross-encoder existentes.
+    """
+    start_time = time.time()
+    assist = ai_search_assist(request.query)
+    processing_time_ms = (time.time() - start_time) * 1000
+    return {
+        "original_query": request.query,
+        "diagnostico": assist.get("diagnostico", ""),
+        "enriched_query": assist.get("enriched_query", ""),
+        "consejos_mejora": assist.get("consejos_mejora", []),
+        "is_valid_medical_query": assist.get("is_valid_medical_query", True),
+        "processing_time_ms": processing_time_ms,
     }
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Alert, AlertDescription } from './ui/alert';
-import { Upload, FileText, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Upload, FileText, AlertCircle, CheckCircle2, Zap } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSession } from '../context/SessionContext';
 import { AuditReportData } from './AuditResults';
@@ -34,6 +34,8 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
   const setAlgorithm = session.setAuditAlgorithm;
   const topK = session.auditTopK;
   const setTopK = session.setAuditTopK;
+  const useAI = session.auditUseAI;
+  const setUseAI = session.setAuditUseAI;
   const isProcessing = session.isProcessing;
   const setIsProcessing = session.setIsProcessing;
   const progress = session.auditProgress;
@@ -153,6 +155,8 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
 
     setIsProcessing(true);
     setError(null);
+    // Marca de inicio para el cronómetro en vivo de la barra de progreso.
+    session.setAuditStartTime(Date.now());
 
     try {
       // Obtener user_id y session_id del localStorage
@@ -170,7 +174,8 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
         body: JSON.stringify({
           records: csvData,
           algorithm: algorithm,
-          top_k: topK
+          top_k: topK,
+          use_ai: useAI
         })
       });
 
@@ -228,6 +233,9 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
       setError(errorMessage);
     } finally {
       setIsProcessing(false);
+      // Detener el cronómetro en vivo (los resultados muestran el tiempo final
+      // autoritativo devuelto por el backend).
+      session.setAuditStartTime(null);
     }
   };
 
@@ -248,6 +256,42 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
           setTopK={handleTopKChange}
           isLoading={isProcessing}
         />
+
+        {/* Modo IA: ejecuta la auditoría a través del pipeline de búsqueda con
+            IA (primera fase LLM que enriquece cada diagnóstico antes de
+            clasificar). Más preciso pero más lento por registro. */}
+        <div
+          className={`flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors ${
+            useAI ? 'border-purple-300 bg-purple-50' : 'border-slate-200 bg-slate-50'
+          }`}
+        >
+          <div className="flex items-start gap-3">
+            <Zap className={`mt-0.5 h-5 w-5 flex-shrink-0 ${useAI ? 'text-purple-600 fill-current' : 'text-slate-400'}`} />
+            <div>
+              <p className="text-sm font-semibold text-slate-800">Auditar con IA</p>
+              <p className="text-xs text-slate-500">
+                Enriquece cada diagnóstico con IA antes de clasificarlo. Mejora la precisión,
+                pero la auditoría tarda más por registro.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={useAI}
+            onClick={() => setUseAI(!useAI)}
+            disabled={isProcessing}
+            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
+              useAI ? 'bg-purple-600' : 'bg-slate-300'
+            }`}
+          >
+            <span
+              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                useAI ? 'translate-x-6' : 'translate-x-1'
+              }`}
+            />
+          </button>
+        </div>
 
         {/* Área de Arrastra y Suelta */}
         <div
@@ -362,6 +406,7 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
                 onClick={handleSubmit}
                 isProcessing={isProcessing}
                 progress={progress}
+                startTime={session.auditStartTime}
                 disabled={false}
                 label="Iniciar Auditoría"
               />

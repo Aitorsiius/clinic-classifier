@@ -148,9 +148,15 @@ class SearchRecord(BaseModel):
     status: str = "success"
     error_message: Optional[str] = None
     details: Optional[dict] = None
-    # Campos del asistente de IA
-    used_ai_assistant: bool = False  # Si se usó el asistente de IA
-    ai_suggestions: Optional[dict] = None  # Sugerencias del asistente de IA (original_query, corrected_query, primary_symptoms, secondary_symptoms, search_keywords, processing_time_ms)
+    # Tiempo total (ms) del pipeline de búsqueda en el backend (IA + recuperación
+    # + re-ranking). Se guarda tanto para búsquedas con IA como sin IA.
+    search_time_ms: Optional[float] = None
+    # Campos del asistente de IA (nuevo pipeline de búsqueda con IA).
+    used_ai_assistant: bool = False  # Si la búsqueda se ejecutó con IA
+    # ai_suggestions: bloque del asistente devuelto por la primera fase del LLM.
+    # Nueva forma: {diagnostico, consejos_mejora[], enriched_query,
+    # is_valid_medical_query, processing_time_ms}.
+    ai_suggestions: Optional[dict] = None
 
 class SearchResponse(BaseModel):
     """Respuesta de búsqueda registrada"""
@@ -167,6 +173,9 @@ class AuditRecord(BaseModel):
     records_count: int
     algorithm: Optional[str] = None
     top_k: Optional[int] = None
+    use_ai: bool = False
+    # Tiempo total (ms) del lote de auditoría (con o sin IA).
+    total_time_ms: Optional[float] = None
     ip_address: Optional[str] = None
     description: Optional[str] = None
     status: str = "success"
@@ -451,6 +460,7 @@ async def register_search(search: SearchRecord):
             "status": search.status,
             "error_message": search.error_message,
             "details": search.details,
+            "search_time_ms": search.search_time_ms,
             "used_ai_assistant": search.used_ai_assistant,
             "ai_suggestions": search.ai_suggestions
         }
@@ -514,19 +524,20 @@ async def update_search_ai_analysis(update: AIAnalysisUpdate):
         # Extraer campos del ai_analysis
         ai_analysis_data = update.ai_analysis
         
-        # Actualizar la búsqueda con todos los campos del análisis de IA
+        # Actualizar la búsqueda con el bloque del asistente (nueva forma:
+        # diagnostico + consejos_mejora + enriched_query). Se mantiene la
+        # tolerancia a claves ausentes para no romper registros antiguos.
         update_result = searches_collection.update_one(
             {"_id": search_doc["_id"]},
             {
                 "$set": {
                     "used_ai_assistant": True,
                     "ai_suggestions": {
-                        "original_query": ai_analysis_data.get("original_query"),
-                        "corrected_query": ai_analysis_data.get("corrected_query"),
-                        "processing_time_ms": ai_analysis_data.get("processing_time_ms"),
-                        "primary_symptoms": ai_analysis_data.get("analysis", {}).get("primary_symptoms", []),
-                        "secondary_symptoms": ai_analysis_data.get("analysis", {}).get("secondary_symptoms", []),
-                        "search_keywords": ai_analysis_data.get("analysis", {}).get("search_keywords", [])
+                        "diagnostico": ai_analysis_data.get("diagnostico", ""),
+                        "consejos_mejora": ai_analysis_data.get("consejos_mejora", []),
+                        "enriched_query": ai_analysis_data.get("enriched_query", ""),
+                        "is_valid_medical_query": ai_analysis_data.get("is_valid_medical_query", True),
+                        "processing_time_ms": ai_analysis_data.get("processing_time_ms")
                     }
                 }
             }
@@ -582,6 +593,8 @@ async def register_audit(audit: AuditRecord):
             "records_count": audit.records_count,
             "algorithm": audit.algorithm,
             "top_k": audit.top_k,
+            "use_ai": audit.use_ai,
+            "total_time_ms": audit.total_time_ms,
             "timestamp": now,
             "ip_address": audit.ip_address,
             "description": audit.description,

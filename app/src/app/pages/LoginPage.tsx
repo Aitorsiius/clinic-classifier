@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
@@ -13,6 +13,17 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const usernameRef = useRef<HTMLInputElement>(null);
+
+  // Hacer focus en el campo de usuario al montar la vista,
+  // con un pequeño retardo para no competir con la animación de entrada.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      usernameRef.current?.focus();
+    }, 150);
+    return () => clearTimeout(timer);
+  }, []);
   
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -108,6 +119,7 @@ export default function LoginPage() {
                 <div className="relative">
                   <User className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                   <Input
+                    ref={usernameRef}
                     id="username"
                     type="text"
                     placeholder="Introduce tu usuario"

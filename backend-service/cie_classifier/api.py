@@ -12,6 +12,7 @@ import os
 import httpx
 import logging
 import asyncio
+import time
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -21,6 +22,9 @@ class SearchRequest(BaseModel):
     query: str
     top_k: Optional[int] = 5
     algorithm: Optional[str] = "hybrid"
+    # Activa el pipeline de búsqueda con IA: el backend pide a la primera fase
+    # (LLM) un texto enriquecido y se lo pasa al bi-encoder + cross-encoder.
+    use_ai: bool = False
     # Campos para el asistente de IA
     used_ai_assistant: bool = False
     ai_suggestions: Optional[dict] = None
@@ -52,12 +56,26 @@ class SearchResponse(BaseModel):
     results: List[SearchResult]
     query: str
     count: int
+    # Indica si la respuesta se generó con el pipeline de IA activado.
+    used_ai: bool = False
+    # Tiempo total (ms) del pipeline de búsqueda en el backend: incluye la fase
+    # de IA (si está activa), la recuperación con el bi-encoder y el re-ranking
+    # con el cross-encoder. Se devuelve al cliente y se persiste en el log.
+    search_time_ms: Optional[float] = None
+    # Bloque del asistente inteligente (solo presente en modo IA): diagnóstico en
+    # lenguaje natural y consejos de mejora por información faltante. Es opcional
+    # e independiente de la lista de resultados, que mantiene su estructura.
+    assistant: Optional[dict] = None
 
 
 # ==========================================
 # CONFIGURACIÓN
 # ==========================================
 LOG_SERVICE_URL = os.getenv("LOG_SERVICE_URL", "http://localhost:8006")
+# Procesador de consultas LLM (primera fase del pipeline de búsqueda con IA).
+# El backend orquesta el pipeline: cuando la búsqueda llega con use_ai=True,
+# pide aquí el texto enriquecido y el bloque del asistente antes de recuperar.
+LLM_QUERY_PROCESSOR_URL = os.getenv("LLM_QUERY_PROCESSOR_URL", "http://localhost:8003")
 # En contenedores debe ser 0.0.0.0 para aceptar conexiones del resto de
 # servicios de la red interna de Docker; el acceso queda acotado por la red
 # bridge aislada y por los puertos publicados en docker-compose.
@@ -90,7 +108,8 @@ async def register_search_log(
     error_message: Optional[str] = None, 
     results: Optional[list] = None,
     used_ai_assistant: bool = False,
-    ai_suggestions: Optional[dict] = None
+    ai_suggestions: Optional[dict] = None,
+    search_time_ms: Optional[float] = None
 ):
     """Registra una búsqueda en log-service de forma no-bloqueante"""
     try:
@@ -108,12 +127,84 @@ async def register_search_log(
                     "status": status,
                     "error_message": error_message,
                     "used_ai_assistant": used_ai_assistant,
-                    "ai_suggestions": ai_suggestions
+                    "ai_suggestions": ai_suggestions,
+                    "search_time_ms": search_time_ms
                 },
                 timeout=2.0
             )
     except Exception as e:
         logger.warning(f"No se pudo registrar búsqueda en log-service: {e}")
+
+# ==========================================
+# PIPELINE DE BÚSQUEDA CON IA (PRIMERA FASE)
+# ==========================================
+async def enrich_query_with_ai(query: str) -> Optional[dict]:
+    """Primera fase del pipeline de búsqueda con IA.
+
+    Pide al procesador LLM el bloque del asistente (diagnostico + consejos) y el
+    texto enriquecido que después se usa para recuperar y re-rankear. Si el LLM
+    no está disponible o falla, devuelve None y la búsqueda continúa en modo
+    normal (degradación elegante, nunca rompe la clasificación).
+
+    Returns:
+        dict con las claves 'diagnostico', 'consejos_mejora', 'enriched_query',
+        'is_valid_medical_query' o None si no se pudo enriquecer.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{LLM_QUERY_PROCESSOR_URL}/ai-search",
+                json={"query": query},
+            )
+            if response.status_code != 200:
+                logger.warning(
+                    "El procesador LLM respondió con estado %s en /ai-search",
+                    response.status_code,
+                )
+                return None
+            return response.json()
+    except Exception as e:
+        logger.warning("No se pudo enriquecer la consulta con IA: %s", e)
+        return None
+
+
+def _build_hierarchy_items(payload_data) -> List[HierarchyItem]:
+    """Construye la lista de HierarchyItem a partir del payload de un resultado."""
+    hierarchy_data: List[HierarchyItem] = []
+    if not isinstance(payload_data, dict):
+        return hierarchy_data
+    metadata = payload_data.get("metadata", {})
+    hierarchy_raw = metadata.get("hierarchy", []) if isinstance(metadata, dict) else []
+    for item in hierarchy_raw:
+        if isinstance(item, dict):
+            hierarchy_data.append(HierarchyItem(code=item.get("id", ""), title=item.get("title", "")))
+        else:
+            hierarchy_data.append(HierarchyItem(code=getattr(item, "id", ""), title=getattr(item, "title", "")))
+    return hierarchy_data
+
+
+def _to_search_result(result) -> SearchResult:
+    """Normaliza un resultado del motor (dict u objeto) a un SearchResult."""
+    if isinstance(result, dict):
+        score = result.get("score", 0.0)
+        payload_data = result.get("payload", {})
+    else:
+        score = getattr(result, "score", 0.0)
+        payload_data = getattr(result, "payload", {})
+
+    is_dict = isinstance(payload_data, dict)
+    payload = Payload(
+        id=payload_data.get("id", "") if is_dict else getattr(payload_data, "id", ""),
+        title=payload_data.get("title", "") if is_dict else getattr(payload_data, "title", ""),
+        metadata=Metadata(hierarchy=_build_hierarchy_items(payload_data)),
+        search_text=payload_data.get("search_text") if is_dict else getattr(payload_data, "search_text", None),
+    )
+    return SearchResult(score=score, original_score=score, payload=payload)
+
+
+def format_search_results(results) -> List[SearchResult]:
+    """Transforma los resultados crudos del motor al formato de respuesta de la API."""
+    return [_to_search_result(result) for result in results]
 
 # ==========================================
 # INICIALIZACIÓN FASTAPI
@@ -186,6 +277,12 @@ async def search_diagnosis(request: SearchRequest, req: Request, session_id: Opt
         raise HTTPException(status_code=503, detail="Search engine not initialized")
     
     try:
+        # Cronómetro del pipeline completo de búsqueda (IA + recuperación +
+        # re-ranking). Se mide en el backend para que el valor sea fiable y se
+        # devuelve al cliente y se persiste en el log, tanto en modo IA como sin
+        # IA.
+        start_time = time.perf_counter()
+
         # Obtener headers si no están en los parámetros
         if not session_id:
             session_id = req.headers.get("x-session-id")
@@ -195,61 +292,46 @@ async def search_diagnosis(request: SearchRequest, req: Request, session_id: Opt
         # Obtener el top_k del request, con un máximo de 20
         requested_top_k = request.top_k if request.top_k and request.top_k > 0 else 5
         top_k = min(requested_top_k, 20)
-        
-        # Realizar búsqueda
-        results = search_engine.search(request.query, top_k=top_k)
-        logger.info("Búsqueda completada: %d resultados", len(results))
-        
+
+        # --- PIPELINE DE BÚSQUEDA CON IA (PRIMERA FASE) ---
+        # Cuando use_ai está activo, la IA enriquece la consulta antes de la
+        # recuperación. El bloque del asistente (diagnóstico + consejos) viaja
+        # aparte; los resultados conservan su estructura habitual.
+        enriched_query: Optional[str] = None
+        assistant_block: Optional[dict] = None
+        # Valores efectivos para el registro/log (en modo IA reflejan lo generado
+        # por esta fase; si el cliente ya los envió, se respetan como respaldo).
+        effective_used_ai = request.used_ai_assistant
+        effective_ai_suggestions = request.ai_suggestions
+
+        if request.use_ai:
+            ai_data = await enrich_query_with_ai(request.query)
+            if ai_data:
+                candidate = (ai_data.get("enriched_query") or "").strip()
+                # Solo usamos el texto enriquecido si la consulta es clínicamente
+                # interpretable y aporta contenido.
+                if ai_data.get("is_valid_medical_query", True) and candidate:
+                    enriched_query = candidate
+                assistant_block = {
+                    "diagnostico": ai_data.get("diagnostico", ""),
+                    "consejos_mejora": ai_data.get("consejos_mejora", []),
+                    "enriched_query": ai_data.get("enriched_query", ""),
+                    "is_valid_medical_query": ai_data.get("is_valid_medical_query", True),
+                    "processing_time_ms": ai_data.get("processing_time_ms"),
+                }
+                effective_used_ai = True
+                effective_ai_suggestions = assistant_block
+
+        # Realizar búsqueda (en modo IA con el texto enriquecido)
+        results = search_engine.search(request.query, top_k=top_k, enriched_query=enriched_query)
+        logger.info("Búsqueda completada: %d resultados (IA=%s)", len(results), request.use_ai)
+
         # Transformar resultados al formato esperado
-        formatted_results = []
-        for result in results:
-            # Extraer información del resultado
-            if isinstance(result, dict):
-                score = result.get("score", 0.0)
-                original_score = result.get("score", 0.0)
-                payload_data = result.get("payload", {})
-            else:
-                # Si no es dict, intentar acceder como objeto
-                score = getattr(result, "score", 0.0)
-                original_score = getattr(result, "score", 0.0)
-                payload_data = getattr(result, "payload", {})
-            
-            # Extraer jerarquía del payload si existe
-            hierarchy_data = []
-            if isinstance(payload_data, dict):
-                metadata = payload_data.get("metadata", {})
-                hierarchy_raw = metadata.get("hierarchy", []) if isinstance(metadata, dict) else []
-                
-                # Convertir jerarquía a objetos HierarchyItem
-                for item in hierarchy_raw:
-                    if isinstance(item, dict):
-                        hierarchy_data.append(HierarchyItem(
-                            code=item.get("id", ""),
-                            title=item.get("title", "")
-                        ))
-                    else:
-                        # Si es un objeto, intenta acceder a sus atributos
-                        hierarchy_data.append(HierarchyItem(
-                            code=getattr(item, "id", ""),
-                            title=getattr(item, "title", "")
-                        ))
-            
-            # Crear objeto Payload
-            payload = Payload(
-                id=payload_data.get("id", "") if isinstance(payload_data, dict) else getattr(payload_data, "id", ""),
-                title=payload_data.get("title", "") if isinstance(payload_data, dict) else getattr(payload_data, "title", ""),
-                metadata=Metadata(hierarchy=hierarchy_data),
-                search_text=payload_data.get("search_text") if isinstance(payload_data, dict) else getattr(payload_data, "search_text", None)
-            )
-            
-            # Crear objeto SearchResult
-            search_result = SearchResult(
-                score=score,
-                original_score=original_score,
-                payload=payload
-            )
-            formatted_results.append(search_result)
-        
+        formatted_results = format_search_results(results)
+
+        # Tiempo total del pipeline (ms), redondeado a 2 decimales.
+        search_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
+
         # Registrar búsqueda en log-service de forma asíncrona
         if session_id and user_id:
             try:
@@ -266,8 +348,9 @@ async def search_diagnosis(request: SearchRequest, req: Request, session_id: Opt
                         results=results_for_log,
                         ip_address=ip_address,
                         status="success",
-                        used_ai_assistant=request.used_ai_assistant,
-                        ai_suggestions=request.ai_suggestions
+                        used_ai_assistant=effective_used_ai,
+                        ai_suggestions=effective_ai_suggestions,
+                        search_time_ms=search_time_ms
                     )
                 )
             except Exception as e:
@@ -276,7 +359,10 @@ async def search_diagnosis(request: SearchRequest, req: Request, session_id: Opt
         return SearchResponse(
             results=formatted_results,
             query=request.query,
-            count=len(formatted_results)
+            count=len(formatted_results),
+            used_ai=request.use_ai,
+            search_time_ms=search_time_ms,
+            assistant=assistant_block
         )
     
     except Exception as e:

@@ -13,6 +13,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { Download, FileJson, TrendingUp, AlertTriangle, CheckCircle2, Search, X } from 'lucide-react';
+import { formatDuration } from '../utils/format';
 
 export interface AuditResult {
   patient_id: string;
@@ -35,6 +36,8 @@ export interface AuditReportData {
   total_mismatch: number;
   conformity_percentage: number;
   top_k?: number;
+  // Tiempo total (ms) del lote de auditoría devuelto por el backend.
+  total_time_ms?: number;
   findings: AuditResult[];
 }
 
@@ -132,7 +135,7 @@ export function AuditResults({ report }: AuditResultsProps) {
   return (
     <div className="space-y-6">
       {/* Estadísticas Resumidas */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <Card>
           <CardContent className="pt-6">
             <div className="text-center">
@@ -176,6 +179,17 @@ export function AuditResults({ report }: AuditResultsProps) {
                 {report.conformity_percentage.toFixed(1)}%
               </div>
               <p className="text-sm text-gray-600 mt-2">Conformidad</p>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <div className="text-2xl font-bold text-slate-700">
+                {formatDuration(report.total_time_ms)}
+              </div>
+              <p className="text-sm text-gray-600 mt-2">Tiempo</p>
             </div>
           </CardContent>
         </Card>
@@ -268,8 +282,8 @@ export function AuditResults({ report }: AuditResultsProps) {
           {/* Tabla de Resultados */}
           <Tabs defaultValue="table" className="w-full">
             <TabsList>
-              <TabsTrigger value="table">Vista de Tabla</TabsTrigger>
-              <TabsTrigger value="list">Vista de Lista</TabsTrigger>
+              <TabsTrigger value="table">Vista de Lista</TabsTrigger>
+              <TabsTrigger value="list">Vista de Tabla</TabsTrigger>
             </TabsList>
 
             <TabsContent value="table" className="overflow-x-auto overflow-y-hidden">

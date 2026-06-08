@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { formatElapsedSeconds } from '../utils/format';
 
 // Configuración de las burbujas que ascienden por el agua (posición, tamaño,
 // altura de ascenso, deriva horizontal, duración y retardo de cada una).
@@ -18,6 +19,9 @@ interface AnimatedProcessButtonProps {
   disabled?: boolean;
   progress?: number; // 0-100, si no se proporciona usa animación automática
   label?: string;
+  // Marca de tiempo (ms epoch) de inicio del proceso. Si se proporciona, el
+  // botón muestra un cronómetro en vivo "(X.Xs)" junto al porcentaje.
+  startTime?: number | null;
 }
 
 export function AnimatedProcessButton({
@@ -26,8 +30,25 @@ export function AnimatedProcessButton({
   disabled = false,
   progress: externalProgress,
   label = 'Iniciar Auditoría',
+  startTime,
 }: AnimatedProcessButtonProps) {
   const [progress, setProgress] = useState(0);
+  // Tiempo transcurrido (ms) desde startTime, refrescado periódicamente para
+  // animar el cronómetro mientras dura el proceso.
+  const [elapsedMs, setElapsedMs] = useState(0);
+
+  // Cronómetro en vivo: mientras se procesa y haya startTime, refresca el
+  // tiempo transcurrido cada 100 ms. Al parar, congela el último valor.
+  useEffect(() => {
+    if (!isProcessing || !startTime) {
+      return;
+    }
+    setElapsedMs(Date.now() - startTime);
+    const interval = setInterval(() => {
+      setElapsedMs(Date.now() - startTime);
+    }, 100);
+    return () => clearInterval(interval);
+  }, [isProcessing, startTime]);
 
   // Si se proporciona progreso externo, úsalo; si no, usa animación automática
   useEffect(() => {
@@ -175,8 +196,8 @@ export function AnimatedProcessButton({
           </motion.div>
         )}
         <span className="text-sm">
-          {isProcessing 
-            ? `Procesando... ${externalProgress !== undefined ? `${Math.round(progress)}%` : ''}` 
+          {isProcessing
+            ? `Procesando... ${externalProgress !== undefined ? `${Math.round(progress)}%` : ''}${startTime ? ` (${formatElapsedSeconds(elapsedMs)})` : ''}`
             : label}
         </span>
       </div>

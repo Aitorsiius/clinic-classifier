@@ -27,6 +27,17 @@ interface SearchResponse {
   results: DiagnosisResult[];
   query: string;
   count: number;
+  used_ai?: boolean;
+  // Tiempo total (ms) del pipeline de búsqueda en el backend (con o sin IA).
+  search_time_ms?: number;
+  // Bloque del asistente inteligente (solo en modo IA).
+  assistant?: {
+    diagnostico: string;
+    consejos_mejora: string[];
+    enriched_query?: string;
+    is_valid_medical_query?: boolean;
+    processing_time_ms?: number;
+  } | null;
 }
 
 // Configuración de API
@@ -64,8 +75,10 @@ export default function SearchPage() {
       // Obtener session_id y user_id del localStorage
       const sessionId = localStorage.getItem('session_id');
       const userId = localStorage.getItem('user_id');
-      
-      // Realizar la búsqueda de clasificación (sin IA)
+
+      // Realizar la búsqueda de clasificación. En modo IA el backend ejecuta la
+      // primera fase (LLM) que enriquece la consulta y devuelve, además de los
+      // resultados con su estructura habitual, el bloque del asistente.
       const response = await fetch(`${API_GATEWAY_URL}/api/search`, {
         method: 'POST',
         headers: {
@@ -76,7 +89,8 @@ export default function SearchPage() {
         body: JSON.stringify({
           query: searchText,
           top_k: topK,
-          algorithm: algorithm
+          algorithm: algorithm,
+          use_ai: useAI
         })
       });
 
@@ -88,57 +102,21 @@ export default function SearchPage() {
       const data: SearchResponse = await response.json();
       setResults(data.results);
 
+      // Guardar el tiempo total de la búsqueda (lo mide el backend e incluye,
+      // en modo IA, la fase de enriquecimiento). Se muestra junto a los
+      // resultados tanto en modo IA como sin IA.
+      session.setSearchTimeMs(data.search_time_ms ?? null);
+
       // Contabilizar la búsqueda en las estadísticas de la sesión
       // (no se distingue entre búsquedas con o sin IA, todo en conjunto)
       session.incrementStat('searches');
 
-      // Si el usuario activó "Usar IA", obtener análisis en paralelo (independiente)
+      // En modo IA, el asistente viaja dentro de la respuesta de búsqueda
+      // (una sola llamada). Si no hay bloque, se limpia el panel.
       if (useAI) {
-        try {
-          const llmResponse = await fetch(`${API_GATEWAY_URL}/api/process-query`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              query: searchText
-            })
-          });
-
-          if (llmResponse.ok) {
-            const llmData = await llmResponse.json();
-            setAiAnalysis(llmData);
-            
-            // Registrar el análisis de IA en el log-service
-            const sessionId = localStorage.getItem('session_id');
-            if (sessionId) {
-              try {
-                await fetch(`${API_GATEWAY_URL}/api/log/update-ai`, {
-                  method: 'PATCH',
-                  headers: {
-                    'Content-Type': 'application/json',
-                  },
-                  body: JSON.stringify({
-                    session_id: sessionId,
-                    query: searchText,
-                    ai_analysis: llmData
-                  })
-                });
-              } catch (logErr) {
-                console.error('Error registering AI analysis in logs:', logErr);
-                // No afecta la experiencia del usuario si falla el logging
-              }
-            }
-          } else {
-            const errorData = await llmResponse.json().catch(() => ({}));
-            const errorMessage = errorData.detail || `Error ${llmResponse.status}: Fallo en el análisis de IA`;
-            console.error('LLM Error:', errorMessage);
-            // Si falla el LLM, no afecta la clasificación pero mostramos el error en consola
-          }
-        } catch (err) {
-          console.error('Error processing with LLM:', err);
-          // Si falla el LLM, no afecta la clasificación
-        }
+        setAiAnalysis(data.assistant ?? null);
+      } else {
+        setAiAnalysis(null);
       }
 
       // Notificar al finalizar TODO el proceso (resultados + IA si estaba activa).
@@ -162,25 +140,27 @@ export default function SearchPage() {
     setResults([]);
     setError(null);
     setAiAnalysis(null);
+    session.setSearchTimeMs(null);
   };
 
   const handleSelectSearch = (search: any) => {
     // Restaurar el estado de la búsqueda seleccionada
     setSearchText(search.query);
     setResults(search.results || []);
+
+    // Restaurar el tiempo total de la búsqueda guardado en el historial.
+    session.setSearchTimeMs(search.search_time_ms ?? null);
     
-    // Si la búsqueda usó IA, restaurar el análisis
+    // Si la búsqueda usó IA, restaurar el bloque del asistente (formato:
+    // diagnóstico + consejos de mejora).
     if (search.used_ai_assistant && search.ai_suggestions) {
       setUseAI(true);
       setAiAnalysis({
-        original_query: search.ai_suggestions.original_query,
-        corrected_query: search.ai_suggestions.corrected_query,
-        analysis: {
-          primary_symptoms: search.ai_suggestions.primary_symptoms || [],
-          secondary_symptoms: search.ai_suggestions.secondary_symptoms || [],
-          search_keywords: search.ai_suggestions.search_keywords || []
-        },
-        processing_time_ms: search.ai_suggestions.processing_time_ms
+        diagnostico: search.ai_suggestions.diagnostico || '',
+        consejos_mejora: search.ai_suggestions.consejos_mejora || [],
+        enriched_query: search.ai_suggestions.enriched_query,
+        is_valid_medical_query: search.ai_suggestions.is_valid_medical_query,
+        processing_time_ms: search.ai_suggestions.processing_time_ms,
       });
     } else {
       setUseAI(false);
@@ -238,7 +218,7 @@ export default function SearchPage() {
 
         {aiAnalysis && <AIAnalysisPanel data={aiAnalysis} shouldCollapse={isLoading} />}
 
-        <ResultsList results={results} isLoading={isLoading} useAI={useAI} />
+        <ResultsList results={results} isLoading={isLoading} useAI={useAI} searchTimeMs={session.searchTimeMs} />
       </main>
 
       {/* Modal de historial */}

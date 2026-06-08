@@ -22,7 +22,7 @@ class GatewaySearchEngine:
     def __init__(self, gateway_url: str):
         self.gateway_url = gateway_url
     
-    def search(self, query: str, top_k: int = 5, algorithm: str = "hybrid") -> List[Dict]:
+    def search(self, query: str, top_k: int = 5, algorithm: str = "hybrid", use_ai: bool = False) -> List[Dict]:
         """
         Busca en el backend a través del gateway
         
@@ -30,15 +30,17 @@ class GatewaySearchEngine:
             query: Texto a buscar
             top_k: Número de resultados
             algorithm: Algoritmo a usar
+            use_ai: Si es True, la búsqueda usa el pipeline de IA (primera fase
+                LLM que enriquece la consulta + bi-encoder + cross-encoder).
             
         Returns:
             Lista de resultados de búsqueda
         """
         try:
-            client = httpx.Client(timeout=30)
+            client = httpx.Client(timeout=60 if use_ai else 30)
             response = client.post(
                 f"{self.gateway_url}/api/search",
-                json={"query": query, "top_k": top_k, "algorithm": algorithm}
+                json={"query": query, "top_k": top_k, "algorithm": algorithm, "use_ai": use_ai}
             )
             client.close()
             
@@ -105,6 +107,10 @@ class AuditReport:
     
     conformity_percentage: float      # % códigos correctos
     findings: List[AuditFinding]
+    # Tiempo total (ms) que tardó el lote completo de auditoría. Se calcula en
+    # audit_batch y se propaga a la respuesta y al log para ambos modos (con y
+    # sin IA).
+    total_time_ms: float = 0.0
     
     def to_dict(self):
         return {
@@ -115,6 +121,7 @@ class AuditReport:
             "total_partial_match": self.total_partial_match,
             "total_mismatch": self.total_mismatch,
             "conformity_percentage": round(self.conformity_percentage, 2),
+            "total_time_ms": round(self.total_time_ms, 2),
             "findings": [f.to_dict() for f in self.findings]
         }
 
@@ -137,7 +144,7 @@ class CodeAuditor:
         self.search_engine = search_engine
         self.audit_history: Dict[str, AuditReport] = {}
     
-    def audit_record(self, record: DiagnosisRecord, top_k: int = 5, algorithm: str = "hybrid") -> AuditFinding:
+    def audit_record(self, record: DiagnosisRecord, top_k: int = 5, algorithm: str = "hybrid", use_ai: bool = False) -> AuditFinding:
         """
         Audita un registro individual de diagnóstico
         
@@ -145,12 +152,13 @@ class CodeAuditor:
             record: Registro de diagnóstico a auditar
             top_k: Número de resultados a considerar
             algorithm: Algoritmo de búsqueda a utilizar
+            use_ai: Si es True, la búsqueda usa el pipeline de IA.
             
         Returns:
             AuditFinding con el resultado de auditoría
         """
         # 1. Realizar búsqueda del diagnóstico
-        search_results = self.search_engine.search(record.diagnosis_text, top_k=top_k, algorithm=algorithm)
+        search_results = self.search_engine.search(record.diagnosis_text, top_k=top_k, algorithm=algorithm, use_ai=use_ai)
         
         if not search_results:
             # No se encontraron resultados - se considera como no coincidencia
@@ -317,7 +325,7 @@ class CodeAuditor:
         
         return True
     
-    def audit_batch(self, records: List[DiagnosisRecord], algorithm: str = "algoritmo1", top_k: int = 5, progress_callback=None) -> AuditReport:
+    def audit_batch(self, records: List[DiagnosisRecord], algorithm: str = "algoritmo1", top_k: int = 5, progress_callback=None, use_ai: bool = False) -> AuditReport:
         """
         Audita un lote de registros de diagnósticos
         
@@ -326,16 +334,21 @@ class CodeAuditor:
             algorithm: Algoritmo de búsqueda a utilizar (algoritmo1, algoritmo2, etc.)
             top_k: Número de resultados a considerar por búsqueda
             progress_callback: Función callback(current, total) para reportar progreso
+            use_ai: Si es True, cada búsqueda usa el pipeline de IA.
             
         Returns:
             AuditReport con hallazgos agregados
         """
         audit_id = f"reporte-auditoria-{algorithm}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         findings: List[AuditFinding] = []
-        
+
+        # Cronómetro del lote completo (incluye, en modo IA, el enriquecimiento
+        # por registro). Se reporta en la respuesta y se persiste en el log.
+        audit_start = time.perf_counter()
+
         # Procesar cada registro
         for idx, record in enumerate(records):
-            finding = self.audit_record(record, top_k=top_k, algorithm=algorithm)
+            finding = self.audit_record(record, top_k=top_k, algorithm=algorithm, use_ai=use_ai)
             findings.append(finding)
             
             # Pequeño delay para simular procesamiento realista (50-100ms por registro)
@@ -357,7 +370,10 @@ class CodeAuditor:
         total_partial = counts[DiscrepancyType.PARTIAL_MATCH]
         weighted_correct = total_correct + (total_partial * 0.5)
         conformity_percentage = (weighted_correct / len(records) * 100) if records else 0
-        
+
+        # Tiempo total del lote (ms)
+        total_time_ms = (time.perf_counter() - audit_start) * 1000
+
         report = AuditReport(
             audit_id=audit_id,
             timestamp=datetime.now(),
@@ -366,7 +382,8 @@ class CodeAuditor:
             total_partial_match=counts[DiscrepancyType.PARTIAL_MATCH],
             total_mismatch=counts[DiscrepancyType.MISMATCH],
             conformity_percentage=conformity_percentage,
-            findings=findings
+            findings=findings,
+            total_time_ms=total_time_ms
         )
         
         # Guardar en historial

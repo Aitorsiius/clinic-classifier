@@ -1,16 +1,19 @@
-import { FileSearch, List } from 'lucide-react';
+import { FileSearch, List, Clock } from 'lucide-react';
 import { ResultCard } from './ResultCard';
 import { LoadingAnimation } from './LoadingAnimation';
 import type { DiagnosisResult } from '../App';
 import { motion } from 'framer-motion';
+import { formatDuration } from '../utils/format';
 
 interface ResultsListProps {
   results: DiagnosisResult[];
   isLoading: boolean;
   useAI: boolean;
+  // Tiempo total (ms) de la búsqueda devuelto por el backend (con o sin IA).
+  searchTimeMs?: number | null;
 }
 
-export function ResultsList({ results, isLoading, useAI }: ResultsListProps) {
+export function ResultsList({ results, isLoading, useAI, searchTimeMs }: ResultsListProps) {
   if (isLoading) {
     return (
       <motion.div
@@ -66,9 +69,21 @@ export function ResultsList({ results, isLoading, useAI }: ResultsListProps) {
           <List className="w-5 h-5 text-slate-500" />
           Resultados de clasificación
         </h2>
-        <span className="text-sm text-slate-600 bg-slate-100 px-2 py-1 rounded-md">
-          {results.length} {results.length === 1 ? 'resultado' : 'resultados'}
-        </span>
+        <div className="flex items-center gap-2">
+          {/* Tiempo total de la búsqueda (se muestra con y sin IA) */}
+          {searchTimeMs !== null && searchTimeMs !== undefined && (
+            <span
+              className="inline-flex items-center gap-1 text-sm text-slate-600 bg-slate-100 px-2 py-1 rounded-md"
+              title="Tiempo total de la búsqueda"
+            >
+              <Clock className="w-3.5 h-3.5 text-slate-500" />
+              {formatDuration(searchTimeMs)}
+            </span>
+          )}
+          <span className="text-sm text-slate-600 bg-slate-100 px-2 py-1 rounded-md">
+            {results.length} {results.length === 1 ? 'resultado' : 'resultados'}
+          </span>
+        </div>
       </motion.div>
 
       <motion.div

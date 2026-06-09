@@ -153,6 +153,7 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
   const handleSubmit = async () => {
     if (!csvData || !token) return;
 
+    setProgress(0);
     setIsProcessing(true);
     setError(null);
     // Marca de inicio para el cronómetro en vivo de la barra de progreso.

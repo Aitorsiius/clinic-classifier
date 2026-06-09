@@ -47,7 +47,10 @@ export default function AuditPage() {
                 </p>
               </div>
               <button
-                onClick={() => setAuditReport(null)}
+                onClick={() => {
+                  session.setAuditProgress(0);
+                  setAuditReport(null);
+                }}
                 className="rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-5 py-2.5 font-medium text-white shadow-lg shadow-blue-600/25 transition-all duration-200 hover:-translate-y-0.5 hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl hover:shadow-blue-600/30 active:translate-y-0 active:scale-[0.98]"
               >
                 Nueva Auditoría

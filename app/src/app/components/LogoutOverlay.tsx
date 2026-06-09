@@ -87,7 +87,7 @@ export function LogoutOverlay() {
     ? [
         {
           key: 'time',
-          label: 'Tiempo en sesión',
+          label: 'Tiempo de actividad',
           value: formatElapsed(logoutSummary.elapsedMs),
           icon: Clock,
         },

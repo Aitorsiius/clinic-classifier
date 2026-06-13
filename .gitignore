@@ -15,7 +15,11 @@ build/
 .pytest_cache/
 .mypy_cache/
 .coverage
+.coverage.*
+coverage.xml
+coverage-*.xml
 htmlcov/
+.pnpm-store/
 
 # Node
 node_modules/

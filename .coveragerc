@@ -1,0 +1,15 @@
+# Configuración de cobertura compartida por todos los microservicios.
+# 'relative_files = True' hace que las rutas del informe XML sean relativas a la
+# raíz del repositorio (p. ej. 'auth-service/main.py'), que es justo lo que
+# SonarCloud necesita para localizar los ficheros.
+[run]
+relative_files = True
+branch = True
+omit =
+    */tests/*
+    */conftest.py
+    */loaders/*
+    */__pycache__/*
+
+[report]
+show_missing = True

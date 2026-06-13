@@ -279,6 +279,3 @@ networks:
 volumes:
   embeddings-data:
   huggingface-cache:
-  ollama-data:
-  qdrant-storage:
-  qdrant-snapshots:

@@ -698,7 +698,7 @@ async def search_diagnosis(
         async with httpx.AsyncClient(timeout=30.0) as client:
             response = await client.post(
                 f"{BACKEND_URL}/search",
-                json=request.dict(),
+                json=request.model_dump(),
                 headers={
                     "x-session-id": session_id or "",
                     "x-user-id": user_id or ""

@@ -12,6 +12,8 @@ from datetime import datetime, timedelta, timezone
 from functools import lru_cache
 import asyncio
 import logging
+from typing import Annotated
+from urllib.parse import urlparse
 
 # ==========================================
 # CONFIGURACIÓN
@@ -34,6 +36,18 @@ def _require_env(name: str) -> str:
         )
     return value
 
+def _is_valid_cors_origin(origin: str) -> bool:
+    """Valida que un origen CORS sea seguro y no contenga caracteres peligrosos."""
+    parsed = urlparse(origin)
+    if parsed.scheme not in ("http", "https"):
+        return False
+    if not parsed.netloc:
+        return False
+    # Evitar caracteres peligrosos en el dominio
+    if any(c in parsed.netloc for c in "<>\"'`"):
+        return False
+    return True
+
 
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
 LLM_QUERY_PROCESSOR_URL = os.getenv("LLM_QUERY_PROCESSOR_URL", "http://localhost:8003")
@@ -50,13 +64,13 @@ JWT_EXPIRATION_HOURS = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
 HOST = os.getenv("HOST", "0.0.0.0")
 # Orígenes permitidos para CORS (configurables por entorno). Por defecto solo
 # el frontend local; nunca "*" junto con cookies/credenciales.
+raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost,http://localhost:3000")
 ALLOWED_ORIGINS = [
     origin.strip()
-    for origin in os.getenv(
-        "ALLOWED_ORIGINS", "http://localhost,http://localhost:3000"
-    ).split(",")
-    if origin.strip()
+    for origin in raw_origins.split(",")
+    if origin.strip() and _is_valid_cors_origin(origin.strip())
 ]
+
 # Mensaje genérico para respuestas 5xx: evita filtrar detalles internos
 # (trazas, rutas, mensajes de excepción) al cliente.
 INTERNAL_ERROR_DETAIL = "Internal server error"
@@ -302,7 +316,9 @@ async def health_check():
             }
         )
 
-@app.post("/api/login", response_model=LoginResponse)
+@app.post("/api/login", response_model=LoginResponse, responses={401: {"description": "Invalid credentials"}, 
+                                                                 503: {"description": "Auth service unavailable"}, 
+                                                                 500: {"description": "Internal server error"}})
 async def login(request: LoginRequest, req: Request):
     """
     Endpoint de login para usuarios - DELEGADO AL AUTH SERVICE
@@ -382,8 +398,8 @@ async def login(request: LoginRequest, req: Request):
 @app.post("/api/logout")
 async def logout(
     req: Request,
-    user_username: str = Depends(get_current_user),
-    session_id: Optional[str] = Query(None)
+    user_username: Annotated[str, Depends(get_current_user)],
+    session_id: Annotated[str | None, Query()] = None
 ):
     """
     Endpoint de logout para usuarios
@@ -406,7 +422,7 @@ async def logout(
     return {"message": f"User {user_username} logged out successfully"}
 
 @app.get("/api/verify-token")
-async def verify_token_endpoint(user_username: str = Depends(get_current_user)):
+async def verify_token_endpoint(user_username: Annotated[str, Depends(get_current_user)]):
     """
     Verifica si el token actual es válido
     
@@ -415,7 +431,7 @@ async def verify_token_endpoint(user_username: str = Depends(get_current_user)):
     """
     return {"username": user_username, "status": "valid"}
 
-@app.post("/auth/verify")
+@app.post("/auth/verify", responses={400: {"description": "Token required"}, 401: {"description": "Invalid token"}})
 async def auth_verify(request: dict):
     """
     Endpoint para verificar tokens JWT - Delegado a Auth Service
@@ -446,11 +462,14 @@ async def auth_verify(request: dict):
             "detail": "Invalid token"
         }
 
-@app.post("/api/audit/batch")
+@app.post("/api/audit/batch", responses={400: {"description": "At least one record is required"}, 
+                                         500: {"description": "Internal server error"}, 
+                                         503: {"description": "Cannot connect to audit service"}, 
+                                         504: {"description": "Audit request timeout"}})
 async def audit_batch(
     req: Request,
     request: AuditBatchRequest,
-    user_username: str = Depends(get_current_user),
+    user_username: Annotated[str, Depends(get_current_user)],
     session_id: Optional[str] = None,
     user_id: Optional[str] = None
 ):
@@ -549,11 +568,11 @@ async def audit_batch(
             detail=INTERNAL_ERROR_DETAIL
         )
 
-@app.post("/api/audit/batch-stream")
+@app.post("/api/audit/batch-stream", responses={400: {"description": "At least one record is required"}})
 async def audit_batch_stream(
     req: Request,
     request: AuditBatchRequest,
-    user_username: str = Depends(get_current_user),
+    user_username: Annotated[str, Depends(get_current_user)],
     session_id: Optional[str] = None,
     user_id: Optional[str] = None
 ):
@@ -669,7 +688,9 @@ async def audit_batch_stream(
     
     return StreamingResponse(stream_audit(), media_type="text/event-stream")
 
-@app.post("/api/search")
+@app.post("/api/search", responses={504: {"description": "Backend request timeout"},
+                                    503: {"description": "Cannot connect to backend service"},
+                                    500: {"description": "Internal server error"}})
 async def search_diagnosis(
     req: Request,
     request: SearchRequest,
@@ -738,7 +759,9 @@ async def search_diagnosis(
         )
 
 # Endpoint alternativo para compatibilidad
-@app.post("/search")
+@app.post("/search", responses={504: {"description": "Backend request timeout"},
+                                503: {"description": "Cannot connect to backend service"},
+                                500: {"description": "Internal server error"}})
 async def search_diagnosis_alt(request: SearchRequest):
     """Alias del endpoint de búsqueda"""
     return await search_diagnosis(request)
@@ -794,7 +817,9 @@ async def _proxy_llm_query(endpoint: str, query: str, timeout_seconds: float, lo
         )
 
 
-@app.post("/api/analyze-query")
+@app.post("/api/analyze-query", responses={504: {"description": LLM_PROCESSOR_TIMEOUT_DETAIL},
+                                           503: {"description": LLM_PROCESSOR_CONNECT_ERROR_DETAIL},
+                                           500: {"description": INTERNAL_ERROR_DETAIL}})
 async def analyze_query(request: SearchRequest):
     """
     Analiza una consulta para extraer síntomas y hallazgos clave usando LLM
@@ -808,7 +833,9 @@ async def analyze_query(request: SearchRequest):
     return await _proxy_llm_query("/analyze", request.query, 60.0, "analyze-query")
 
 
-@app.post("/api/correct-query")
+@app.post("/api/correct-query", responses={504: {"description": LLM_PROCESSOR_TIMEOUT_DETAIL},
+                                           503: {"description": LLM_PROCESSOR_CONNECT_ERROR_DETAIL},
+                                           500: {"description": INTERNAL_ERROR_DETAIL}})
 async def correct_query(request: SearchRequest):
     """
     Corrige y normaliza una consulta
@@ -822,7 +849,9 @@ async def correct_query(request: SearchRequest):
     return await _proxy_llm_query("/correct", request.query, 60.0, "correct-query")
 
 
-@app.post("/api/process-query")
+@app.post("/api/process-query", responses={504: {"description": LLM_PROCESSOR_TIMEOUT_DETAIL},
+                                           503: {"description": LLM_PROCESSOR_CONNECT_ERROR_DETAIL},
+                                           500: {"description": INTERNAL_ERROR_DETAIL}})
 async def process_query(request: SearchRequest):
     """
     Pipeline completo: Análisis + Corrección
@@ -943,8 +972,11 @@ async def _proxy_admin_request(
         raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
 
 
-@app.get("/api/admin/users")
-async def admin_list_users(request: Request, user_username: str = Depends(get_current_user)):
+@app.get("/api/admin/users", responses={403: {"description": ADMIN_ACCESS_REQUIRED_DETAIL},
+                                        503: {"description": AUTH_SERVICE_UNAVAILABLE_DETAIL},
+                                        500: {"description": INTERNAL_ERROR_DETAIL}, 
+                                        401: {"description": AUTH_HEADER_MISSING_DETAIL}})
+async def admin_list_users(request: Request):
     """
     Lista todos los usuarios (solo admin) - DELEGADO AL AUTH SERVICE
     """
@@ -956,8 +988,11 @@ async def admin_list_users(request: Request, user_username: str = Depends(get_cu
         log_label="Error listando usuarios (admin)",
     )
 
-@app.post("/api/admin/users")
-async def admin_create_user(request: Request, body: dict = Body(...), user_username: str = Depends(get_current_user)):
+@app.post("/api/admin/users", responses={403: {"description": ADMIN_ACCESS_REQUIRED_DETAIL},
+                                         503: {"description": AUTH_SERVICE_UNAVAILABLE_DETAIL},
+                                         500: {"description": INTERNAL_ERROR_DETAIL},
+                                         401: {"description": AUTH_HEADER_MISSING_DETAIL}})
+async def admin_create_user(request: Request, body: Annotated[dict, Body(...)]):
     """
     Crea un nuevo usuario (solo admin) - DELEGADO AL AUTH SERVICE
     """
@@ -971,8 +1006,11 @@ async def admin_create_user(request: Request, body: dict = Body(...), user_usern
         forward_session=True,
     )
 
-@app.put("/api/admin/users/{username}/role")
-async def admin_update_user_role(username: str, request: Request, body: dict = Body(...), user_username: str = Depends(get_current_user)):
+@app.put("/api/admin/users/{username}/role", responses={403: {"description": ADMIN_ACCESS_REQUIRED_DETAIL},
+                                                       503: {"description": AUTH_SERVICE_UNAVAILABLE_DETAIL},
+                                                       500: {"description": INTERNAL_ERROR_DETAIL},
+                                                       401: {"description": AUTH_HEADER_MISSING_DETAIL}})
+async def admin_update_user_role(username: str, request: Request, body: Annotated[dict, Body(...)]):
     """
     Actualiza los roles de un usuario (solo admin) - DELEGADO AL AUTH SERVICE
     """
@@ -986,8 +1024,11 @@ async def admin_update_user_role(username: str, request: Request, body: dict = B
         forward_session=True,
     )
 
-@app.put("/api/admin/users/{username}/password")
-async def admin_change_password(username: str, request: Request, body: dict = Body(...), user_username: str = Depends(get_current_user)):
+@app.put("/api/admin/users/{username}/password", responses={403: {"description": ADMIN_ACCESS_REQUIRED_DETAIL},
+                                                            503: {"description": AUTH_SERVICE_UNAVAILABLE_DETAIL},
+                                                            500: {"description": INTERNAL_ERROR_DETAIL},
+                                                            401: {"description": AUTH_HEADER_MISSING_DETAIL}})
+async def admin_change_password(username: str, request: Request, body: Annotated[dict, Body(...)]):
     """
     Cambia la contraseña de un usuario (solo admin) - DELEGADO AL AUTH SERVICE
     """
@@ -1001,8 +1042,11 @@ async def admin_change_password(username: str, request: Request, body: dict = Bo
         forward_session=True,
     )
 
-@app.delete("/api/admin/users/{username}")
-async def admin_delete_user(username: str, request: Request, user_username: str = Depends(get_current_user)):
+@app.delete("/api/admin/users/{username}", responses={403: {"description": ADMIN_ACCESS_REQUIRED_DETAIL},
+                                                      503: {"description": AUTH_SERVICE_UNAVAILABLE_DETAIL},
+                                                      500: {"description": INTERNAL_ERROR_DETAIL},
+                                                      401: {"description": AUTH_HEADER_MISSING_DETAIL}})
+async def admin_delete_user(username: str, request: Request, user_username: Annotated[str, Depends(get_current_user)]):
     """
     Elimina un usuario (solo admin) - DELEGADO AL AUTH SERVICE
     """
@@ -1015,8 +1059,11 @@ async def admin_delete_user(username: str, request: Request, user_username: str 
         forward_session=True,
     )
 
-@app.get("/api/admin/users/{username}/block-info")
-async def admin_user_block_info(username: str, request: Request, user_username: str = Depends(get_current_user)):
+@app.get("/api/admin/users/{username}/block-info", responses={403: {"description": ADMIN_ACCESS_REQUIRED_DETAIL},
+                                                               503: {"description": AUTH_SERVICE_UNAVAILABLE_DETAIL},
+                                                               500: {"description": INTERNAL_ERROR_DETAIL},
+                                                               401: {"description": AUTH_HEADER_MISSING_DETAIL}})
+async def admin_user_block_info(username: str, request: Request):
     """
     Obtiene la información de bloqueo de un usuario (solo admin) - DELEGADO AL AUTH SERVICE
 
@@ -1031,8 +1078,11 @@ async def admin_user_block_info(username: str, request: Request, user_username: 
         log_label="Error obteniendo información de bloqueo (admin)",
     )
 
-@app.post("/api/admin/users/{username}/unblock")
-async def admin_unblock_user(username: str, request: Request, user_username: str = Depends(get_current_user)):
+@app.post("/api/admin/users/{username}/unblock", responses={403: {"description": ADMIN_ACCESS_REQUIRED_DETAIL},
+                                                            503: {"description": AUTH_SERVICE_UNAVAILABLE_DETAIL},
+                                                            500: {"description": INTERNAL_ERROR_DETAIL},
+                                                            401: {"description": AUTH_HEADER_MISSING_DETAIL}})
+async def admin_unblock_user(username: str, request: Request):
     """
     Desbloquea a un usuario bloqueado por intentos fallidos (solo admin) - DELEGADO AL AUTH SERVICE
     """
@@ -1048,19 +1098,17 @@ async def admin_unblock_user(username: str, request: Request, user_username: str
 # ==========================================
 # ENDPOINTS DE HISTORIAL
 # ==========================================
-@app.get("/api/search-history")
-async def get_user_search_history(
-    request: Request,
-    user_username: str = Depends(get_current_user),
-    limit: int = 100
-):
+@app.get("/api/search-history", responses={401: {"description": AUTH_HEADER_MISSING_DETAIL},
+                                           503: {"description": "History service unavailable"},
+                                           504: {"description": "History service request timeout"},
+                                           500: {"description": INTERNAL_ERROR_DETAIL}})
+async def get_user_search_history(request: Request, limit: int = 100):
     """
     Obtiene el historial de búsquedas del usuario actual,
     segmentado temporalmente - DELEGADO AL HISTORY SERVICE
     
     Args:
         request: Request object
-        user_username: Username del usuario autenticado
         limit: Límite de búsquedas a retornar
     
     Returns:

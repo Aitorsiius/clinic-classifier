@@ -8,6 +8,8 @@ Microservicio responsable de:
 - Proporcionar acceso a los logs para el panel de administración
 """
 
+import re
+
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -41,6 +43,8 @@ ALLOWED_ORIGINS = [
 ]
 # Mensaje genérico para respuestas 5xx: evita filtrar detalles internos.
 INTERNAL_ERROR_DETAIL = "Internal server error"
+# Mensaje genérico para errores de conexión a MongoDB.
+MONGO_CONNECTION_ERROR_DETAIL = "MongoDB connection error"
 
 # ==========================================
 # LOGGING
@@ -97,13 +101,13 @@ def init_mongodb():
         admin_actions_collection.create_index([("timestamp", -1)])
         admin_actions_collection.create_index([("timestamp", -1), ("actor_user_id", 1)])
         
-        logger.info("✓ Conexión a MongoDB establecida correctamente")
+        logger.info("Conexión a MongoDB establecida correctamente")
         return True
     except ServerSelectionTimeoutError:
-        logger.error("✗ Error: No se pudo conectar a MongoDB.")
+        logger.error("Error: No se pudo conectar a MongoDB.")
         return False
     except Exception as e:
-        logger.exception(f"✗ Error al conectar a MongoDB: {e}")
+        logger.exception(f"Error al conectar a MongoDB: {e}")
         return False
 
 # Intentar conexión inicial
@@ -258,7 +262,7 @@ class AdminActionListResponse(BaseModel):
 # FUNCIONES AUXILIARES
 # ==========================================
 
-def serialize_doc(doc) -> dict:
+def serialize_doc(doc) -> Optional[dict]:
     """Convierte un documento de MongoDB a un diccionario serializable"""
     if doc is None:
         return None
@@ -294,6 +298,16 @@ def get_session_by_user_id_active(user_id: str) -> Optional[dict]:
     except Exception as e:
         logger.exception(f"Error al obtener sesión activa: {e}")
         return None
+    
+def sanitize_log(data: str) -> str:
+    """
+    Sanitiza strings reemplazando saltos de línea y retornos de carro 
+    por espacios para evitar vulnerabilidades de Log Injection (CRLF).
+    """
+    if data is None:
+        return ""
+    # Convertimos a string por si llega un int u otro tipo
+    return re.sub(r'[\r\n]', ' ', str(data))
 
 # ==========================================
 # INICIALIZACIÓN FASTAPI
@@ -324,7 +338,7 @@ def health_check():
         return {"status": "error", "message": "MongoDB not connected"}
     return {"status": "ok", "service": "log-service"}
 
-@app.post("/sessions/create", response_model=SessionCreateResponse)
+@app.post("/sessions/create", response_model=SessionCreateResponse, responses={500: {"description": MONGO_CONNECTION_ERROR_DETAIL}})
 async def create_session(request: SessionCreateRequest):
     """
     Crea una nueva sesión para un usuario.
@@ -332,7 +346,7 @@ async def create_session(request: SessionCreateRequest):
     """
     try:
         if sessions_collection is None:
-            raise HTTPException(status_code=500, detail="MongoDB connection error")
+            raise HTTPException(status_code=500, detail=MONGO_CONNECTION_ERROR_DETAIL)
         
         # Generar ID único para la sesión
         session_id = str(ObjectId())
@@ -350,7 +364,7 @@ async def create_session(request: SessionCreateRequest):
         result = sessions_collection.insert_one(session_doc)
         
         if result.inserted_id:
-            logger.info(f"Sesión creada: {session_id} para usuario {request.user_id}")
+            logger.info(f"Sesión creada: {sanitize_log(session_id)} para usuario {sanitize_log(request.user_id)}")
             return SessionCreateResponse(
                 session_id=session_id,
                 user_id=request.user_id,
@@ -365,7 +379,9 @@ async def create_session(request: SessionCreateRequest):
         logger.exception(f"Error al crear sesión: {e}")
         raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
 
-@app.post("/sessions/close", response_model=SessionCloseResponse)
+@app.post("/sessions/close", response_model=SessionCloseResponse, responses={500: {"description": MONGO_CONNECTION_ERROR_DETAIL}, 
+                                                                             404: {"description": "Session not found"}, 
+                                                                             400: {"description": "Session already closed"}})
 async def close_session(request: SessionCloseRequest):
     """
     Cierra una sesión existente.
@@ -374,7 +390,7 @@ async def close_session(request: SessionCloseRequest):
     """
     try:
         if sessions_collection is None:
-            raise HTTPException(status_code=500, detail="MongoDB connection error")
+            raise HTTPException(status_code=500, detail=MONGO_CONNECTION_ERROR_DETAIL)
         
         session = get_session_by_id(request.session_id)
         
@@ -408,7 +424,7 @@ async def close_session(request: SessionCloseRequest):
         if update_result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Session not found")
         
-        logger.info(f"Sesión cerrada: {request.session_id} - Duración: {duration_seconds}s")
+        logger.info(f"Sesión cerrada: {sanitize_log(request.session_id)} - Duración: {duration_seconds}s")
         
         return SessionCloseResponse(
             session_id=request.session_id,
@@ -496,7 +512,8 @@ async def register_search(search: SearchRecord):
             status="error"
         )
 
-@app.patch("/searches/update-ai")
+@app.patch("/searches/update-ai", responses={500: {"description": MONGO_CONNECTION_ERROR_DETAIL},
+                                             404: {"description": "Search record not found"}})
 async def update_search_ai_analysis(update: AIAnalysisUpdate):
     """
     Actualiza los datos de análisis de IA para una búsqueda existente.
@@ -510,7 +527,7 @@ async def update_search_ai_analysis(update: AIAnalysisUpdate):
     """
     try:
         if searches_collection is None:
-            raise HTTPException(status_code=500, detail="MongoDB connection error")
+            raise HTTPException(status_code=500, detail=MONGO_CONNECTION_ERROR_DETAIL)
         
         # Buscar la búsqueda más reciente con esta session_id y query
         search_doc = searches_collection.find_one({
@@ -544,7 +561,7 @@ async def update_search_ai_analysis(update: AIAnalysisUpdate):
         )
         
         if update_result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Search record not found for update")
+            raise HTTPException(status_code=404, detail="Search record not found")
         
         logger.info(f"Análisis de IA actualizado para búsqueda: {update.query}")
         
@@ -634,7 +651,7 @@ async def register_audit(audit: AuditRecord):
             status="error"
         )
 
-@app.get("/sessions", response_model=SessionListResponse)
+@app.get("/sessions", response_model=SessionListResponse, responses={500: {"description": MONGO_CONNECTION_ERROR_DETAIL}})
 async def get_sessions(
     username: Optional[str] = None,
     limit: int = 100,
@@ -645,7 +662,7 @@ async def get_sessions(
     """
     try:
         if sessions_collection is None:
-            raise HTTPException(status_code=500, detail="MongoDB connection error")
+            raise HTTPException(status_code=500, detail=MONGO_CONNECTION_ERROR_DETAIL)
         
         query = {}
         if username:
@@ -684,7 +701,7 @@ async def get_sessions(
         logger.exception(f"Error al obtener sesiones: {e}")
         raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
 
-@app.get("/searches", response_model=SearchListResponse)
+@app.get("/searches", response_model=SearchListResponse, responses={500: {"description": MONGO_CONNECTION_ERROR_DETAIL}})
 async def get_searches(
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
@@ -696,7 +713,7 @@ async def get_searches(
     """
     try:
         if searches_collection is None:
-            raise HTTPException(status_code=500, detail="MongoDB connection error")
+            raise HTTPException(status_code=500, detail=MONGO_CONNECTION_ERROR_DETAIL)
         
         query = {}
         if session_id:
@@ -728,7 +745,7 @@ async def get_searches(
         logger.exception(f"Error al obtener búsquedas: {e}")
         raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
 
-@app.get("/audits", response_model=AuditListResponse)
+@app.get("/audits", response_model=AuditListResponse, responses={500: {"description": MONGO_CONNECTION_ERROR_DETAIL}})
 async def get_audits(
     session_id: Optional[str] = None,
     user_id: Optional[str] = None,
@@ -740,7 +757,7 @@ async def get_audits(
     """
     try:
         if audits_collection is None:
-            raise HTTPException(status_code=500, detail="MongoDB connection error")
+            raise HTTPException(status_code=500, detail=MONGO_CONNECTION_ERROR_DETAIL)
         
         query = {}
         if session_id:
@@ -852,7 +869,7 @@ async def register_admin_action(action: AdminActionRecord):
             status="error"
         )
 
-@app.get("/admin-actions", response_model=AdminActionListResponse)
+@app.get("/admin-actions", response_model=AdminActionListResponse, responses={500: {"description": MONGO_CONNECTION_ERROR_DETAIL}})
 async def get_admin_actions(
     session_id: Optional[str] = None,
     actor_user_id: Optional[str] = None,
@@ -867,7 +884,7 @@ async def get_admin_actions(
     """
     try:
         if admin_actions_collection is None:
-            raise HTTPException(status_code=500, detail="MongoDB connection error")
+            raise HTTPException(status_code=500, detail=MONGO_CONNECTION_ERROR_DETAIL)
 
         query = {}
         if session_id:

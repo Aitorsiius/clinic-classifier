@@ -66,6 +66,7 @@ vertex_gen = _fake_module("vertexai.generative_models")
 
 class _FakeModel:
     def __init__(self, *args, **kwargs):
+        # No se hace nada, para que no falle la importación de main.
         pass
 
     def generate_content(self, *args, **kwargs):

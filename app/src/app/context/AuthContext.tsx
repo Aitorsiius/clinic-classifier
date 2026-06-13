@@ -249,9 +249,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     //    El api-gateway ya se encarga de avisar al log-service internamente,
     //    por lo que NO hay que llamar a /sessions/close directamente (evita 400).
     if (token && sessionId) {
+
+      const isValidSessionId = /^[a-zA-Z0-9_-]+$/.test(sessionId);
+
+      if (!isValidSessionId) {
+        console.error('Invalid session_id format:', sessionId);
+        return;
+      }
+
+      const safeSessionId = encodeURIComponent(sessionId);
+
       (async () => {
         try {
-          await fetch(`${API_GATEWAY_URL}/api/logout?session_id=${sessionId}`, {
+          await fetch(`${API_GATEWAY_URL}/api/logout?session_id=${safeSessionId}`, {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,

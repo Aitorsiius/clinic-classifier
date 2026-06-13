@@ -13,7 +13,40 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies (runtime + test)
+        run: |
+          python -m pip install --upgrade pip
+          # Dependencias de tiempo de ejecución de cada microservicio Python.
+          for req in \
+            audit-service/requirements.txt \
+            auth-service/requirements.txt \
+            api-gateway-service/requirements.txt \
+            history-service/requirements.txt \
+            log-service/requirements.txt \
+            llm-query-processor-service/requirements.txt \
+            backend-service/cie_classifier/requirements.txt; do
+            echo "== pip install -r $req =="
+            pip install -r "$req"
+          done
+          # Dependencias específicas de test (pytest, pytest-cov, PyJWT, etc.).
+          pip install -r requirements-test.txt
+
+      - name: Run tests with coverage
+        # Genera coverage-<servicio>.xml en la raíz (uno por microservicio).
+        # run-tests.sh recorre todos los servicios aunque alguno falle, de modo
+        # que siempre se producen los informes de cobertura.
+        run: ./run-tests.sh
+
       - name: SonarCloud Scan
+        # Se ejecuta siempre (incluso si algún test falla) para que SonarCloud
+        # reciba la cobertura; el job seguirá marcado como fallido si los tests
+        # no pasan.
+        if: always()
         uses: SonarSource/sonarqube-scan-action@v5
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}

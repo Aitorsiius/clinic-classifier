@@ -43,6 +43,11 @@ interface SearchResponse {
 // Configuración de API
 const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3000';
 
+const isValidId = (id: string | null): boolean => {
+  if (!id) return false;
+  return /^[a-zA-Z0-9\-_]+$/.test(id);
+};
+
 export default function SearchPage() {
   const session = useSession();
   const { isAuthenticated } = useAuth();
@@ -73,8 +78,8 @@ export default function SearchPage() {
     
     try {
       // Obtener session_id y user_id del localStorage
-      const sessionId = localStorage.getItem('session_id');
-      const userId = localStorage.getItem('user_id');
+      const sessionId = isValidId(localStorage.getItem('session_id')) ? localStorage.getItem('session_id') : null;
+      const userId = isValidId(localStorage.getItem('user_id')) ? localStorage.getItem('user_id') : null;
 
       // Realizar la búsqueda de clasificación. En modo IA el backend ejecuta la
       // primera fase (LLM) que enriquece la consulta y devuelve, además de los

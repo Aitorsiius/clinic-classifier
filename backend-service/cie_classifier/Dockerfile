@@ -5,17 +5,17 @@ FROM python:3.11-slim
 WORKDIR /app
 
 # Instalar dependencias del sistema necesarias
-RUN apt-get update && apt-get install -y \
-    gcc \
-    g++ \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    g++ \
+    gcc \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements
 COPY requirements.txt .
 
 # Instalar dependencias de Python
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --only-binary :all: -r requirements.txt
 
 # Copiar el código de la aplicación
 COPY . .

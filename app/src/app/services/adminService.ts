@@ -50,7 +50,12 @@ export interface UserBlockInfo {
   } | null;
 }
 
-const API_GATEWAY_URL = (import.meta as any).env.VITE_API_GATEWAY_URL || 'http://localhost:3000';
+const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3000';
+
+const isValidId = (id: string | null): boolean => {
+  if (!id) return false;
+  return /^[a-zA-Z0-9\-_]+$/.test(id);
+};
 
 /**
  * Construye las cabeceras para las peticiones de administración, incluyendo el
@@ -62,9 +67,9 @@ function buildAdminHeaders(token: string): Record<string, string> {
     'Content-Type': 'application/json',
     'Authorization': `Bearer ${token}`,
   };
-  const sessionId = localStorage.getItem('session_id');
+  const sessionId = isValidId(localStorage.getItem('session_id')) ? localStorage.getItem('session_id') : null;
   if (sessionId) headers['x-session-id'] = sessionId;
-  const userId = localStorage.getItem('user_id');
+  const userId = isValidId(localStorage.getItem('user_id')) ? localStorage.getItem('user_id') : null;
   if (userId) headers['x-user-id'] = userId;
   return headers;
 }

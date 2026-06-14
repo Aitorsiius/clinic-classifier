@@ -45,6 +45,11 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
 
   const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3000';
 
+  const isValidId = (id: string | null): boolean => {
+    if (!id) return false;
+    return /^[a-zA-Z0-9\-_]+$/.test(id);
+  };
+
   // Al cargar un CSV, la vista previa y el botón de acción aparecen con una
   // animación de entrada; desplazamos la página EN PARALELO (al compás) para
   // que el botón "Iniciar Auditoría" quede visible sin saltos bruscos.
@@ -161,8 +166,8 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
 
     try {
       // Obtener user_id y session_id del localStorage
-      const userId = localStorage.getItem('user_id');
-      const sessionId = localStorage.getItem('session_id');
+      const userId = isValidId(localStorage.getItem('user_id')) ? localStorage.getItem('user_id') : null;
+      const sessionId = isValidId(localStorage.getItem('session_id')) ? localStorage.getItem('session_id') : null;
 
       const response = await fetch(`${API_GATEWAY_URL}/api/audit/batch-stream`, {
         method: 'POST',

@@ -175,6 +175,12 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     sessionStorage.setItem('session_startedAt', String(now));
   };
 
+  const isValidJWT = (token: string | null): boolean => {
+    if (!token) return false;
+    // Verifica que tenga la estructura clásica: header.payload.signature
+    return /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]*$/.test(token);
+  };
+
   // Detectar logout y limpiar sesión automáticamente
   useEffect(() => {
     const handleStorageChange = (e: StorageEvent) => {
@@ -204,7 +210,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     window.addEventListener('auth:login', handleLogin);
 
     // También verificar al montar si no hay token
-    const token = localStorage.getItem('auth_token');
+    const token = isValidJWT(localStorage.getItem('auth_token')) ? localStorage.getItem('auth_token') : null;
     if (!token) {
       resetAllStates();
     }

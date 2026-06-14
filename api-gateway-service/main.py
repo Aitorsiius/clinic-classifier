@@ -526,26 +526,24 @@ async def audit_batch(
             
             # Registrar la auditoría de forma asincrónica
             if session_id and user_id:
-                asyncio.create_task(
-                    log_audit(
-                        session_id=session_id,
-                        user_id=user_id,
-                        records_count=len(request.records),
-                        algorithm=request.algorithm,
-                        top_k=request.top_k,
-                        use_ai=request.use_ai,
-                        total_time_ms=result.get("total_time_ms"),
-                        ip_address=get_client_ip(req) if req else "unknown",
-                        status="success",
-                        details={
-                            "records_count": len(request.records),
-                            "top_k": request.top_k,
-                            "algorithm": request.algorithm,
-                            "use_ai": request.use_ai,
-                            "total_time_ms": result.get("total_time_ms")
-                        }
-                    )
-                )
+                await log_audit(
+                            session_id=session_id,
+                            user_id=user_id,
+                            records_count=len(request.records),
+                            algorithm=request.algorithm,
+                            top_k=request.top_k,
+                            use_ai=request.use_ai,
+                            total_time_ms=result.get("total_time_ms"),
+                            ip_address=get_client_ip(req) if req else "unknown",
+                            status="success",
+                            details={
+                                "records_count": len(request.records),
+                                "top_k": request.top_k,
+                                "algorithm": request.algorithm,
+                                "use_ai": request.use_ai,
+                                "total_time_ms": result.get("total_time_ms")
+                            }
+                        )
             
             return result
             
@@ -663,20 +661,18 @@ async def audit_batch_stream(
                     "findings": audit_result.get("findings", [])
                 }
                 
-                asyncio.create_task(
-                    log_audit(
-                        session_id=session_id,
-                        user_id=user_id,
-                        records_count=len(request.records),
-                        algorithm=request.algorithm or "algoritmo1",
-                        top_k=request.top_k or 5,
-                        use_ai=request.use_ai,
-                        total_time_ms=audit_result.get("total_time_ms"),
-                        ip_address=get_client_ip(req) if req else "unknown",
-                        status="success",
-                        details=details
-                    )
-                )
+                await log_audit(
+                            session_id=session_id,
+                            user_id=user_id,
+                            records_count=len(request.records),
+                            algorithm=request.algorithm or "algoritmo1",
+                            top_k=request.top_k or 5,
+                            use_ai=request.use_ai,
+                            total_time_ms=audit_result.get("total_time_ms"),
+                            ip_address=get_client_ip(req) if req else "unknown",
+                            status="success",
+                            details=details
+                        )
                         
         except httpx.TimeoutException:
             yield "data: {\"type\": \"error\", \"message\": \"Request timeout\"}\n\n"

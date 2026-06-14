@@ -457,7 +457,7 @@ async def register_search(search: SearchRecord):
         # Verificar que la sesión existe
         session = get_session_by_id(search.session_id)
         if not session:
-            logger.warning(f"Sesión no encontrada para búsqueda: {search.session_id}")
+            logger.warning(f"Sesión no encontrada para búsqueda: {sanitize_log(search.session_id)}")
         
         search_id = str(ObjectId())
         now = datetime.now(timezone.utc)
@@ -563,7 +563,7 @@ async def update_search_ai_analysis(update: AIAnalysisUpdate):
         if update_result.matched_count == 0:
             raise HTTPException(status_code=404, detail="Search record not found")
         
-        logger.info(f"Análisis de IA actualizado para búsqueda: {update.query}")
+        logger.info(f"Análisis de IA actualizado para búsqueda: {sanitize_log(update.query)}")
         
         return {
             "status": "success",
@@ -598,7 +598,7 @@ async def register_audit(audit: AuditRecord):
         # Verificar que la sesión existe
         session = get_session_by_id(audit.session_id)
         if not session:
-            logger.warning(f"Sesión no encontrada para auditoría: {audit.session_id}")
+            logger.warning(f"Sesión no encontrada para auditoría: {sanitize_log(audit.session_id)}")
         
         audit_id = str(ObjectId())
         now = datetime.now(timezone.utc)
@@ -833,8 +833,8 @@ async def register_admin_action(action: AdminActionRecord):
 
         if result.inserted_id:
             logger.info(
-                f"Acción de admin registrada: {action.action} | actor={action.actor_username} "
-                f"| target={action.target_username} | session={action.session_id}"
+                f"Acción de admin registrada: {sanitize_log(action.action)} | actor={sanitize_log(action.actor_username)} "
+                f"| target={sanitize_log(action.target_username)} | session={sanitize_log(action.session_id)}"
             )
             return AdminActionResponse(
                 action_id=action_id,

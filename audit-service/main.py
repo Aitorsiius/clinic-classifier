@@ -7,6 +7,8 @@ Microservicio responsable de:
 - Exportar reportes en diferentes formatos
 """
 
+import re
+
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
@@ -21,6 +23,7 @@ import json
 import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import logging
+from typing import Annotated
 
 # Importar módulo de auditoría
 from audit import (
@@ -50,6 +53,9 @@ ALLOWED_ORIGINS = [
 ]
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+INTERNAL_ERROR_DETAIL = "Internal server error"
+BACKEND_UNAVAILABLE_DETAIL = "Backend service unavailable"
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -184,7 +190,7 @@ async def health_check():
 @app.post("/audit/batch-stream", tags=["Audit"])
 async def audit_batch_stream(
     request: AuditBatchRequest,
-    current_user: str = Depends(verify_token)
+    current_user: Annotated[str, Depends(verify_token)]
 ):
     """
     Realiza una auditoría de lote de registros con progreso en tiempo real via SSE
@@ -295,14 +301,15 @@ async def audit_batch_stream(
             
         except Exception as e:
             logger.exception("Error durante el streaming de auditoría: %s", e)
-            yield f"data: {json.dumps({'type': 'error', 'message': 'Internal server error'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': INTERNAL_ERROR_DETAIL})}\n\n"
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-@app.post("/audit/batch", response_model=AuditReportResponse, tags=["Audit"])
+@app.post("/audit/batch", response_model=AuditReportResponse, tags=["Audit"], responses={503: {"description": BACKEND_UNAVAILABLE_DETAIL}, 
+                                                                                         500: {"description": INTERNAL_ERROR_DETAIL}})
 async def audit_batch(
     request: AuditBatchRequest,
-    current_user: str = Depends(verify_token)
+    current_user: Annotated[str, Depends(verify_token)]
 ):
     """
     Realiza una auditoría de lote de registros
@@ -436,15 +443,16 @@ async def audit_batch(
         raise
     except httpx.RequestError as e:
         logger.warning("Backend no disponible durante la auditoría: %s", e)
-        raise HTTPException(status_code=503, detail="Backend service unavailable")
+        raise HTTPException(status_code=503, detail=BACKEND_UNAVAILABLE_DETAIL)
     except Exception as e:
         logger.exception("Error interno durante la auditoría: %s", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
 
-@app.post("/audit/record", response_model=AuditResult, tags=["Audit"])
+@app.post("/audit/record", response_model=AuditResult, tags=["Audit"], responses={503: {"description": BACKEND_UNAVAILABLE_DETAIL}, 
+                                                                                  500: {"description": INTERNAL_ERROR_DETAIL}})
 async def audit_record(
     request: AuditRecordRequest,
-    current_user: str = Depends(verify_token)
+    current_user: Annotated[str, Depends(verify_token)]
 ):
     """
     Audita un registro individual
@@ -480,12 +488,14 @@ async def audit_record(
         raise HTTPException(status_code=503, detail="Backend service unavailable")
     except Exception as e:
         logger.exception("Error interno auditando registro individual: %s", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
 
-@app.get("/audit/{audit_id}", response_model=AuditReportResponse, tags=["Audit"])
+@app.get("/audit/{audit_id}", response_model=AuditReportResponse, tags=["Audit"], responses={503: {"description": BACKEND_UNAVAILABLE_DETAIL}, 
+                                                                                             500: {"description": INTERNAL_ERROR_DETAIL}, 
+                                                                                             404: {"description": "Audit report not found"}})
 async def get_audit_report(
     audit_id: str,
-    current_user: str = Depends(verify_token)
+    current_user: Annotated[str, Depends(verify_token)]
 ):
     """
     Obtiene un reporte de auditoría por su ID
@@ -519,10 +529,10 @@ async def get_audit_report(
     except HTTPException:
         raise
     except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Backend service unavailable")
+        raise HTTPException(status_code=503, detail=BACKEND_UNAVAILABLE_DETAIL)
     except Exception as e:
         logger.exception("Error interno obteniendo reporte de auditoría: %s", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
 
 # ==========================================
 # MAIN

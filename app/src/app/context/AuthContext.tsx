@@ -74,17 +74,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3000';
 
+  const isValidJWT = (token: string | null): boolean => {
+    if (!token) return false;
+    // Verifica que tenga la estructura clásica: header.payload.signature
+    return /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]*$/.test(token);
+  };
+
+  const isValidUsername = (username: string | null): boolean => {
+    if (!username) return false;
+    return /^[a-zA-Z0-9._-]+$/.test(username);
+  };
+
+
+  const getSafeUserData = (rawData: string | null) => {
+      if (!rawData) return null;
+      
+      try {
+          const parsed = JSON.parse(rawData);
+          
+          // Verificamos que sea un diccionario/objeto real y no un array u otra cosa inyectada
+          if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+              // Nota: Si usas TypeScript estricto, podrías querer verificar 
+              // propiedades específicas aquí (ej. parsed.hasOwnProperty('email'))
+              return parsed;
+          }
+          return null;
+      } catch (e) {
+          // Si el JSON es inválido (ej. alguien metió código raro), capturamos el error 
+          // para que la app de React no explote en pantalla blanca.
+          return null;
+      }
+  };
+
   // Verificar token al montar el componente
   useEffect(() => {
-    const storedToken = localStorage.getItem('auth_token');
-    const storedUsername = localStorage.getItem('user_username');
-    const storedUserData = localStorage.getItem('user_data');
+    const storedToken = isValidJWT(localStorage.getItem('auth_token')) ? localStorage.getItem('auth_token') : null;
+    const storedUsername = isValidUsername(localStorage.getItem('user_username')) ? localStorage.getItem('user_username') : null;
+    const storedUserData = getSafeUserData(localStorage.getItem('user_data'));
     
     if (storedToken && storedUsername) {
       setToken(storedToken);
       setUsername(storedUsername);
       if (storedUserData) {
-        setUserData(JSON.parse(storedUserData));
+        setUserData(storedUserData);
       }
       setIsAuthenticated(true);
       

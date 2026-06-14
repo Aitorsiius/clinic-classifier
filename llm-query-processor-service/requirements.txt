@@ -10,5 +10,5 @@ requests==2.31.0
 python-dotenv==1.0.0
 
 # Google Cloud - Vertex AI
-google-cloud-aiplatform>=1.42.0
-google-auth>=2.26.0
+google-cloud-aiplatform==1.42.0
+google-auth==2.26.0

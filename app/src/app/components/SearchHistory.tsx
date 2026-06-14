@@ -36,6 +36,12 @@ interface SearchHistoryProps {
 
 const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3000';
 
+const isValidJWT = (token: string | null): boolean => {
+    if (!token) return false;
+    // Verifica que tenga la estructura clásica: header.payload.signature
+    return /^[A-Za-z0-9-_]+\.[A-Za-z0-9-_]+\.[A-Za-z0-9-_]*$/.test(token);
+};
+
 const TIME_SEGMENTS = [
   { key: 'last_hour', label: 'Última hora' },
   { key: 'last_day', label: 'Último día' },
@@ -84,7 +90,7 @@ export function SearchHistory({ isOpen, onClose, onSelectSearch }: SearchHistory
     setError(null);
 
     try {
-      const token = localStorage.getItem('auth_token');
+      const token = isValidJWT(localStorage.getItem('auth_token')) ? localStorage.getItem('auth_token') : null;
       if (!token) {
         throw new Error('No authentication token found');
       }

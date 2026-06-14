@@ -25,6 +25,8 @@ from concurrent.futures import ThreadPoolExecutor
 import logging
 from typing import Annotated
 import urllib.parse
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import BackgroundTasks
 
 # Importar módulo de auditoría
 from audit import (
@@ -155,6 +157,120 @@ def verify_token(authorization: str = Header(None)):
             return data.get("email")
     except httpx.RequestError:
         raise HTTPException(status_code=500, detail="Authentication service unavailable")
+    
+def _build_diagnosis_records(records) -> list[DiagnosisRecord]:
+    """Convierte los registros del request a los modelos de dominio."""
+    return [
+        DiagnosisRecord(
+            patient_id=r.patient_id or f"PAT{i:04d}",
+            diagnosis_text=r.diagnosis_text,
+            assigned_code=r.assigned_code,
+            age=r.age,
+            sex=r.sex
+        )
+        for i, r in enumerate(records)
+    ]
+
+def _format_audit_result(report, top_k: int) -> dict:
+    """Convierte el reporte interno al formato de respuesta JSON."""
+    return {
+        "audit_id": report.audit_id,
+        "timestamp": report.timestamp.isoformat(),
+        "total_records": report.total_records,
+        "total_correct": report.total_correct,
+        "total_partial_match": report.total_partial_match,
+        "total_mismatch": report.total_mismatch,
+        "conformity_percentage": report.conformity_percentage,
+        "top_k": top_k,
+        "total_time_ms": round(report.total_time_ms, 2),
+        "findings": [
+            {
+                "patient_id": f.patient_id,
+                "diagnosis_text": f.diagnosis_text,
+                "assigned_code": f.assigned_code,
+                "suggested_code": f.suggested_code,
+                "discrepancy_type": f.discrepancy_type.value,
+                "confidence_score": f.confidence_score,
+                "match_score": f.match_score,
+                "explanation": f.explanation,
+                "alternative_codes": f.alternative_codes
+            }
+            for f in report.findings
+        ]
+    }
+
+def _build_audit_response(report, top_k: int) -> AuditReportResponse:
+    """Convierte el reporte interno al modelo Pydantic de respuesta."""
+    findings = [
+        AuditResult(
+            patient_id=f.patient_id,
+            diagnosis_text=f.diagnosis_text,
+            assigned_code=f.assigned_code,
+            suggested_code=f.suggested_code,
+            discrepancy_type=f.discrepancy_type.value,
+            confidence_score=f.confidence_score,
+            match_score=f.match_score,
+            explanation=f.explanation,
+            alternative_codes=f.alternative_codes
+        )
+        for f in report.findings
+    ]
+    
+    return AuditReportResponse(
+        audit_id=report.audit_id,
+        timestamp=report.timestamp.isoformat(),
+        total_records=report.total_records,
+        total_correct=report.total_correct,
+        total_partial_match=report.total_partial_match,
+        total_mismatch=report.total_mismatch,
+        conformity_percentage=report.conformity_percentage,
+        top_k=top_k,
+        total_time_ms=round(report.total_time_ms, 2),
+        findings=findings
+    )
+
+async def _log_audit_to_service(report, current_user: str, algorithm: str, top_k: int, use_ai: bool):
+    """Envía el log de auditoría al servicio externo de forma asíncrona."""
+    if not current_user:
+        return
+        
+    try:
+        payload = {
+            "session_id": f"audit_session_{report.audit_id}",
+            "username": current_user,
+            "records_count": report.total_records,
+            "algorithm": algorithm,
+            "top_k": top_k,
+            "use_ai": use_ai,
+            "total_time_ms": round(report.total_time_ms, 2),
+            "status": "success",
+            "details": {
+                "total_correct": report.total_correct,
+                "total_partial_match": report.total_partial_match,
+                "total_mismatch": report.total_mismatch,
+                "conformity_percentage": report.conformity_percentage,
+                "use_ai": use_ai,
+                "total_time_ms": round(report.total_time_ms, 2),
+                "findings": [
+                    {
+                        "patient_id": f.patient_id,
+                        "diagnosis_text": f.diagnosis_text,
+                        "assigned_code": f.assigned_code,
+                        "suggested_code": f.suggested_code,
+                        "discrepancy_type": f.discrepancy_type.value if hasattr(f.discrepancy_type, 'value') else f.discrepancy_type,
+                        "confidence_score": f.confidence_score,
+                        "match_score": f.match_score,
+                        "explanation": f.explanation,
+                        "alternative_codes": f.alternative_codes
+                    }
+                    for f in report.findings
+                ]
+            }
+        }
+        async with httpx.AsyncClient() as client:
+            await client.post(f"{LOG_SERVICE_URL}/audits", json=payload, timeout=5)
+    except Exception as e:
+        logger.warning(f"No se pudo registrar auditoría en log-service: {e}")
 
 # ==========================================
 # INICIALIZACIÓN FASTAPI
@@ -193,252 +309,100 @@ async def audit_batch_stream(
     request: AuditBatchRequest,
     current_user: Annotated[str, Depends(verify_token)]
 ):
-    """
-    Realiza una auditoría de lote de registros con progreso en tiempo real via SSE
+    """Realiza una auditoría de lote de registros con progreso en tiempo real via SSE"""
     
-    Devuelve eventos con progreso conforme se procesan los registros
-    
-    Args:
-        request: Lote de registros a auditar
-        current_user: Email del usuario autenticado
-        
-    Yields:
-        Eventos SSE con progreso y resultado final
-    """
     async def event_generator():
         try:
-            # 1. Crear records para auditoría
-            diagnosis_records = [
-                DiagnosisRecord(
-                    patient_id=r.patient_id or f"PAT{i:04d}",
-                    diagnosis_text=r.diagnosis_text,
-                    assigned_code=r.assigned_code,
-                    age=r.age,
-                    sex=r.sex
-                )
-                for i, r in enumerate(request.records)
-            ]
+            # 1. Preparar datos usando el helper
+            diagnosis_records = _build_diagnosis_records(request.records)
             
-            # Cola para comunicación entre threads
+            # 2. Configurar la comunicación asíncrona
             progress_queue = asyncio.Queue()
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop() 
             
-            # Callback para enviar eventos de progreso
             def progress_callback(current: int, total: int):
-                # Enviar evento de progreso a la cola
-                try:
-                    asyncio.run_coroutine_threadsafe(
-                        progress_queue.put({'type': 'progress', 'current': current, 'total': total, 'percentage': int((current / total) * 100)}), 
-                        loop
-                    )
-                except Exception:
-                    pass
+                event_data = {
+                    'type': 'progress', 
+                    'current': current, 
+                    'total': total, 
+                    'percentage': int((current / total) * 100)
+                }
+                loop.call_soon_threadsafe(progress_queue.put_nowait, event_data)
 
-            # Procesar la auditoría en un thread pool para no bloquear el event loop
+            # 3. Lanzar la auditoría en segundo plano
             search_engine = GatewaySearchEngine(API_GATEWAY_URL)
             auditor = CodeAuditor(search_engine)
             
-            # Ejecutar auditoría en thread separado
-            loop = asyncio.get_event_loop()
-            executor = ThreadPoolExecutor(max_workers=1)
-            
-            # Task para procesar auditoría
-            audit_task = loop.run_in_executor(
-                executor,
-                lambda: auditor.audit_batch(
-                    diagnosis_records, 
-                    algorithm=request.algorithm or "algoritmo1",
-                    top_k=request.top_k or 5, 
-                    progress_callback=progress_callback,
-                    use_ai=request.use_ai
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                audit_task = loop.run_in_executor(
+                    executor,
+                    lambda: auditor.audit_batch(
+                        diagnosis_records, 
+                        algorithm=request.algorithm or "algoritmo1",
+                        top_k=request.top_k or 5, 
+                        progress_callback=progress_callback,
+                        use_ai=request.use_ai
+                    )
                 )
-            )
-            
-            # Leer eventos de progreso mientras se procesa
-            report = None
-            while report is None:
-                try:
-                    # Intentar obtener evento de progreso con timeout
-                    progress_event = await asyncio.wait_for(progress_queue.get(), timeout=0.1)
-                    yield f"data: {json.dumps(progress_event)}\n\n"
-                except asyncio.TimeoutError:
-                    # Verificar si la auditoría ya terminó
-                    if audit_task.done():
-                        report = audit_task.result()
-                        break
-                    continue
-            
-            # 3. Formatear respuesta final
-            findings = [
-                {
-                    "patient_id": f.patient_id,
-                    "diagnosis_text": f.diagnosis_text,
-                    "assigned_code": f.assigned_code,
-                    "suggested_code": f.suggested_code,
-                    "discrepancy_type": f.discrepancy_type.value,
-                    "confidence_score": f.confidence_score,
-                    "match_score": f.match_score,
-                    "explanation": f.explanation,
-                    "alternative_codes": f.alternative_codes
-                }
-                for f in report.findings
-            ]
-            
-            result = {
-                "audit_id": report.audit_id,
-                "timestamp": report.timestamp.isoformat(),
-                "total_records": report.total_records,
-                "total_correct": report.total_correct,
-                "total_partial_match": report.total_partial_match,
-                "total_mismatch": report.total_mismatch,
-                "conformity_percentage": report.conformity_percentage,
-                "top_k": request.top_k or 5,
-                "total_time_ms": round(report.total_time_ms, 2),
-                "findings": findings
-            }
-            
-            # Enviar resultado final
-            yield f"data: {json.dumps({'type': 'complete', 'result': result})}\n\n"
-            
+                
+                # 4. Bucle de streaming simplificado
+                while not audit_task.done():
+                    try:
+                        progress_event = await asyncio.wait_for(progress_queue.get(), timeout=0.2)
+                        yield f"data: {json.dumps(progress_event)}\n\n"
+                    except asyncio.TimeoutError:
+                        continue
+                
+                # 5. Vaciar cualquier evento residual en la cola antes de cerrar
+                while not progress_queue.empty():
+                    yield f"data: {json.dumps(progress_queue.get_nowait())}\n\n"
+                
+            # 6. Formatear y enviar resultado final usando el helper
+                report = audit_task.result()
+                result_json = _format_audit_result(report, request.top_k or 5)
+                yield f"data: {json.dumps({'type': 'complete', 'result': result_json})}\n\n"
+                
         except Exception as e:
             logger.exception("Error durante el streaming de auditoría: %s", e)
             yield f"data: {json.dumps({'type': 'error', 'message': INTERNAL_ERROR_DETAIL})}\n\n"
     
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
-@app.post("/audit/batch", response_model=AuditReportResponse, tags=["Audit"], responses={503: {"description": BACKEND_UNAVAILABLE_DETAIL}, 
-                                                                                         500: {"description": INTERNAL_ERROR_DETAIL}})
+@app.post("/audit/batch", response_model=AuditReportResponse, tags=["Audit"], responses={503: {"description": BACKEND_UNAVAILABLE_DETAIL}, 500: {"description": INTERNAL_ERROR_DETAIL}})
 async def audit_batch(
     request: AuditBatchRequest,
-    current_user: Annotated[str, Depends(verify_token)]
+    current_user: Annotated[str, Depends(verify_token)],
+    background_tasks: BackgroundTasks
 ):
-    """
-    Realiza una auditoría de lote de registros
-    
-    El flujo es:
-    1. Recibe lote de registros (diagnosis_text, assigned_code)
-    2. Para cada uno, hace búsqueda semántica en el backend
-    3. Compara código asignado con código sugerido
-    4. Retorna reporte con hallazgos
-    
-    Args:
-        request: Lote de registros a auditar
-        current_user: Email del usuario autenticado
-        
-    Returns:
-        AuditReportResponse con los resultados de la auditoría
-    """
+    """Realiza una auditoría de lote de registros."""
     try:
-        # 1. Crear records para auditoría
-        diagnosis_records = [
-            DiagnosisRecord(
-                patient_id=r.patient_id or f"PAT{i:04d}",
-                diagnosis_text=r.diagnosis_text,
-                assigned_code=r.assigned_code,
-                age=r.age,
-                sex=r.sex
-            )
-            for i, r in enumerate(request.records)
-        ]
+        # 1. Extraer configuraciones y mapear registros
+        top_k = request.top_k or 5
+        algorithm = request.algorithm or "algoritmo1"
+        diagnosis_records = _build_diagnosis_records(request.records)
         
-        # 2. Para cada registro, obtener resultados de búsqueda del backend
-        search_results_map = {}
-        async with httpx.AsyncClient(timeout=30) as client:
-            for record in diagnosis_records:
-                try:
-                    # Buscar a través del gateway
-                    response = await client.post(
-                        f"{API_GATEWAY_URL}/api/search",
-                        json={"query": record.diagnosis_text, "top_k": request.top_k or 5},
-                        timeout=10
-                    )
-                    
-                    if response.status_code == 200:
-                        search_data = response.json()
-                        search_results_map[record.diagnosis_text] = search_data.get("results", [])
-                    else:
-                        search_results_map[record.diagnosis_text] = []
-                except Exception:
-                    search_results_map[record.diagnosis_text] = []
-        
-        # 3. Ejecutar auditoría localmente
+        # 2. Ejecutar auditoría localmente
         search_engine = GatewaySearchEngine(API_GATEWAY_URL)
         auditor = CodeAuditor(search_engine)
-        report = auditor.audit_batch(diagnosis_records, algorithm=request.algorithm or "algoritmo1", top_k=request.top_k or 5, use_ai=request.use_ai)
-        
-        # 4. Formatear respuesta
-        findings = [
-            AuditResult(
-                patient_id=f.patient_id,
-                diagnosis_text=f.diagnosis_text,
-                assigned_code=f.assigned_code,
-                suggested_code=f.suggested_code,
-                discrepancy_type=f.discrepancy_type.value,
-                confidence_score=f.confidence_score,
-                match_score=f.match_score,
-                explanation=f.explanation,
-                alternative_codes=f.alternative_codes
-            )
-            for f in report.findings
-        ]
-        
-        result = AuditReportResponse(
-            audit_id=report.audit_id,
-            timestamp=report.timestamp.isoformat(),
-            total_records=report.total_records,
-            total_correct=report.total_correct,
-            total_partial_match=report.total_partial_match,
-            total_mismatch=report.total_mismatch,
-            conformity_percentage=report.conformity_percentage,
-            top_k=request.top_k or 5,
-            total_time_ms=round(report.total_time_ms, 2),
-            findings=findings
+        report = auditor.audit_batch(
+        diagnosis_records, 
+            algorithm=algorithm, 
+            top_k=top_k, 
+            use_ai=request.use_ai
         )
         
-        # Registrar auditoría en log-service
-        if current_user:
-            try:
-                async with httpx.AsyncClient() as client:
-                    await client.post(
-                        f"{LOG_SERVICE_URL}/audits",
-                        json={
-                            "session_id": "audit_session_" + report.audit_id,
-                            "username": current_user,
-                            "records_count": len(diagnosis_records),
-                            "algorithm": request.algorithm or "algoritmo1",
-                            "top_k": request.top_k or 5,
-                            "use_ai": request.use_ai,
-                            "total_time_ms": round(report.total_time_ms, 2),
-                            "status": "success",
-                            "details": {
-                                "total_correct": report.total_correct,
-                                "total_partial_match": report.total_partial_match,
-                                "total_mismatch": report.total_mismatch,
-                                "conformity_percentage": report.conformity_percentage,
-                                "use_ai": request.use_ai,
-                                "total_time_ms": round(report.total_time_ms, 2),
-                                "findings": [
-                                    {
-                                        "patient_id": f.patient_id,
-                                        "diagnosis_text": f.diagnosis_text,
-                                        "assigned_code": f.assigned_code,
-                                        "suggested_code": f.suggested_code,
-                                        "discrepancy_type": f.discrepancy_type,
-                                        "confidence_score": f.confidence_score,
-                                        "match_score": f.match_score,
-                                        "explanation": f.explanation,
-                                        "alternative_codes": f.alternative_codes
-                                    }
-                                    for f in report.findings
-                                ]
-                            }
-                        },
-                        timeout=5
-                    )
-            except Exception as e:
-                logger.warning(f"No se pudo registrar auditoría en log-service: {e}")
+        # 3. Delegar el log a una tarea en segundo plano 
+        background_tasks.add_task(
+            _log_audit_to_service,
+            report=report,
+            current_user=current_user,
+            algorithm=algorithm,
+            top_k=top_k,
+            use_ai=request.use_ai
+        )
         
-        return result
+        # 4. Formatear y retornar
+        return _build_audit_response(report, top_k)
         
     except HTTPException:
         raise

@@ -22,6 +22,8 @@ import urllib.parse
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+DATA = "data"
+
 
 def _require_env(name: str) -> str:
     """Obtiene una variable de entorno obligatoria o aborta el arranque.
@@ -206,6 +208,10 @@ async def log_search(
     except Exception as e:
         logger.warning(f"Error al registrar búsqueda: {e}")
 
+# ==========================================
+# FUNCIONES AUXILIARES
+# ==========================================
+
 async def log_audit(
     session_id: str,
     user_id: str,
@@ -250,6 +256,113 @@ async def log_audit(
         logger.warning("Timeout al registrar auditoría en el servicio de logs")
     except Exception as e:
         logger.warning(f"Error al registrar auditoría: {e}")
+
+def _extract_audit_result_from_sse(line: str) -> dict | None:
+    """Extrae y devuelve el resultado final si el evento es de tipo 'complete'."""
+    if not line.startswith(f"{DATA}: "):
+        return None
+        
+    if '"type": "complete"' in line or '"type":"complete"' in line:
+        try:
+            # Reemplazamos solo la primera ocurrencia por seguridad
+            data_str = line.replace(f"{DATA}: ", "", 1)
+            event_data = json.loads(data_str)
+            return event_data.get("result", {})
+        except json.JSONDecodeError:
+            logger.warning("No se pudo parsear el evento de finalización de auditoría")
+            
+    return None
+
+async def _log_successful_audit(
+    audit_result: dict, 
+    request: AuditBatchRequest, 
+    req: Request, 
+    session_id: str | None, 
+    user_id: str | None
+):
+    """Prepara y envía el log de la auditoría al servicio correspondiente."""
+    if not (session_id and user_id and audit_result):
+        return
+
+    logger.info("Registrando auditoría con %d registros", len(request.records))
+    
+    details = {
+        "audit_id": audit_result.get("audit_id"),
+        "timestamp": audit_result.get("timestamp"),
+        "total_records": audit_result.get("total_records"),
+        "total_correct": audit_result.get("total_correct"),
+        "total_partial_match": audit_result.get("total_partial_match"),
+        "total_mismatch": audit_result.get("total_mismatch"),
+        "conformity_percentage": audit_result.get("conformity_percentage"),
+        "top_k": audit_result.get("top_k"),
+        "algorithm": request.algorithm or "algoritmo1",
+        "use_ai": request.use_ai,
+        "total_time_ms": audit_result.get("total_time_ms"),
+        "findings": audit_result.get("findings", [])
+    }
+    
+    await log_audit(
+        session_id=session_id,
+        user_id=user_id,
+        records_count=len(request.records),
+        algorithm=request.algorithm or "algoritmo1",
+        top_k=request.top_k or 5,
+        use_ai=request.use_ai,
+        total_time_ms=audit_result.get("total_time_ms"),
+        ip_address=get_client_ip(req) if req else "unknown",
+        status="success",
+        details=details
+    )
+
+async def _fetch_backend_stream(payload: dict, auth_header: str):
+    """Maneja exclusivamente la conexión HTTPX y el stream de datos crudos."""
+    async with httpx.AsyncClient(timeout=300.0) as client:
+        async with client.stream(
+            "POST",
+            f"{AUDIT_SERVICE_URL}/audit/batch-stream",
+            json=payload,
+            headers={"Authorization": auth_header}
+        ) as response:
+            
+            if response.status_code != 200:
+                yield "ERROR_STATUS"
+                return
+                
+            async for line in response.aiter_lines():
+                yield line
+
+async def _audit_event_generator(
+    payload: dict, auth_header: str, request: AuditBatchRequest, 
+    req: Request, session_id: str | None, user_id: str | None
+):
+    """Consume el stream del backend, reenvía al cliente y lanza el log final."""
+    audit_result = None
+    try:
+        async for line in _fetch_backend_stream(payload, auth_header):
+            
+            if line == "ERROR_STATUS":
+                yield f'{DATA}: {{"type": "error", "message": "Audit service error"}}\n\n'
+                return
+                
+            if not line.startswith(f"{DATA}: "):
+                continue
+                
+            yield line + "\n\n"
+            
+            extracted = _extract_audit_result_from_sse(line)
+            if extracted:
+                audit_result = extracted
+                
+        if audit_result:
+            await _log_successful_audit(audit_result, request, req, session_id, user_id)
+            
+    except httpx.TimeoutException:
+        yield f'{DATA}: {{"type": "error", "message": "Request timeout"}}\n\n'
+    except httpx.ConnectError:
+        yield f'{DATA}: {{"type": "error", "message": "Cannot connect to audit service"}}\n\n'
+    except Exception as e:
+        logger.exception("Error durante el streaming de auditoría: %s", e)
+        yield f'{DATA}: {{"type": "error", "message": "Internal server error"}}\n\n'
 
 def get_client_ip(request: Request) -> str:
     """Obtiene la IP del cliente desde el request"""
@@ -571,118 +684,32 @@ async def audit_batch_stream(
     req: Request,
     request: AuditBatchRequest,
     user_username: Annotated[str, Depends(get_current_user)],
-    session_id: Optional[str] = None,
-    user_id: Optional[str] = None
+    session_id: str | None = None,
+    user_id: str | None = None
 ):
-    """
-    Endpoint para auditar un lote de diagnósticos con streaming de progreso - DELEGADO AL AUDIT SERVICE
+    """Endpoint para auditar un lote de diagnósticos con streaming de progreso"""
     
-    Args:
-        request: Lote de registros a auditar
-        user_username: Username del auditor autenticado (inyectado por dependency)
-        session_id: ID de sesión (opcional, para logging)
-        user_id: ID del usuario (opcional, para logging)
-        req: Request object para obtener headers e IP
-    
-    Yields:
-        Eventos SSE con progreso y resultado final
-    """
     if not request.records:
-        raise HTTPException(
-            status_code=400,
-            detail="At least one record is required"
-        )
+        raise HTTPException(status_code=400, detail="At least one record is required")
+        
+    session_id = session_id or req.headers.get("x-session-id")
+    user_id = user_id or req.headers.get("x-user-id")
     
-    # Obtener session_id y user_id del header si no están en params
-    if not session_id:
-        session_id = req.headers.get("x-session-id")
-    if not user_id:
-        user_id = req.headers.get("x-user-id")
+    payload = {
+        "records": [r.model_dump() for r in request.records],
+        "top_k": request.top_k or 5,
+        "algorithm": request.algorithm or "algoritmo1",
+        "use_ai": request.use_ai
+    }
     
-    logger.info("Inicio de auditoría en streaming con %d registros", len(request.records))
+    auth_header = f"Bearer {create_token(user_username)}"
     
-    async def stream_audit():
-        audit_completed = False
-        audit_result = None
-        try:
-            # Obtener token del auditor para pasar al audit service
-            auth_header = f"Bearer {create_token(user_username)}"
-            
-            # Enviar solicitud al audit-service
-            async with httpx.AsyncClient(timeout=300.0) as client:
-                async with client.stream(
-                    "POST",
-                    f"{AUDIT_SERVICE_URL}/audit/batch-stream",
-                    json={
-                        "records": [r.model_dump() for r in request.records],
-                        "top_k": request.top_k or 5,
-                        "algorithm": request.algorithm or "algoritmo1",
-                        "use_ai": request.use_ai
-                    },
-                    headers={"Authorization": auth_header}
-                ) as response:
-                    if response.status_code != 200:
-                        yield "data: {\"type\": \"error\", \"message\": \"Audit service error\"}\n\n"
-                        return
-                    
-                    # Pasar el stream directo del backend
-                    async for line in response.aiter_lines():
-                        if line.startswith("data: "):
-                            yield line + "\n\n"
-                            
-                            # Detectar cuando se completa la auditoría y extraer resultado
-                            if '"type": "complete"' in line or '"type":"complete"' in line:
-                                audit_completed = True
-                                # Extraer el resultado del JSON
-                                try:
-                                    data_str = line.replace("data: ", "")
-                                    event_data = json.loads(data_str)
-                                    audit_result = event_data.get("result", {})
-                                except json.JSONDecodeError:
-                                    logger.warning("No se pudo parsear el evento de finalización de auditoría")
-            
-            # Registrar la auditoría en el log-service si se completó exitosamente
-            if audit_completed and session_id and user_id and audit_result:
-                logger.info("Registrando auditoría con %d registros", len(request.records))
-                
-                # Preparar detalles completos de la auditoría
-                details = {
-                    "audit_id": audit_result.get("audit_id"),
-                    "timestamp": audit_result.get("timestamp"),
-                    "total_records": audit_result.get("total_records"),
-                    "total_correct": audit_result.get("total_correct"),
-                    "total_partial_match": audit_result.get("total_partial_match"),
-                    "total_mismatch": audit_result.get("total_mismatch"),
-                    "conformity_percentage": audit_result.get("conformity_percentage"),
-                    "top_k": audit_result.get("top_k"),
-                    "algorithm": request.algorithm or "algoritmo1",
-                    "use_ai": request.use_ai,
-                    "total_time_ms": audit_result.get("total_time_ms"),
-                    "findings": audit_result.get("findings", [])
-                }
-                
-                await log_audit(
-                            session_id=session_id,
-                            user_id=user_id,
-                            records_count=len(request.records),
-                            algorithm=request.algorithm or "algoritmo1",
-                            top_k=request.top_k or 5,
-                            use_ai=request.use_ai,
-                            total_time_ms=audit_result.get("total_time_ms"),
-                            ip_address=get_client_ip(req) if req else "unknown",
-                            status="success",
-                            details=details
-                        )
-                        
-        except httpx.TimeoutException:
-            yield "data: {\"type\": \"error\", \"message\": \"Request timeout\"}\n\n"
-        except httpx.ConnectError:
-            yield "data: {\"type\": \"error\", \"message\": \"Cannot connect to audit service\"}\n\n"
-        except Exception as e:
-            logger.exception("Error durante el streaming de auditoría: %s", e)
-            yield "data: {\"type\": \"error\", \"message\": \"Internal server error\"}\n\n"
+    # Se lo damos todo mascado al generador externo
+    generator = _audit_event_generator(
+        payload, auth_header, request, req, session_id, user_id
+    )
     
-    return StreamingResponse(stream_audit(), media_type="text/event-stream")
+    return StreamingResponse(generator, media_type="text/event-stream")
 
 @app.post("/api/search", responses={504: {"description": "Backend request timeout"},
                                     503: {"description": "Cannot connect to backend service"},
@@ -1010,10 +1037,11 @@ async def admin_update_user_role(username: str, request: Request, body: Annotate
     """
     Actualiza los roles de un usuario (solo admin) - DELEGADO AL AUTH SERVICE
     """
+    safe_username = urllib.parse.quote(username, safe="")
     return await _proxy_admin_request(
         request,
         "PUT",
-        f"/admin/users/{username}/role",
+        f"/admin/users/{safe_username}/role",
         error_detail="Error updating user roles",
         log_label="Error actualizando roles de usuario (admin)",
         body=body,
@@ -1028,10 +1056,11 @@ async def admin_change_password(username: str, request: Request, body: Annotated
     """
     Cambia la contraseña de un usuario (solo admin) - DELEGADO AL AUTH SERVICE
     """
+    safe_username = urllib.parse.quote(username, safe="")
     return await _proxy_admin_request(
         request,
         "PUT",
-        f"/admin/users/{username}/password",
+        f"/admin/users/{safe_username}/password",
         error_detail="Error updating password",
         log_label="Error actualizando contraseña de usuario (admin)",
         body=body,
@@ -1046,10 +1075,11 @@ async def admin_delete_user(username: str, request: Request, user_username: Anno
     """
     Elimina un usuario (solo admin) - DELEGADO AL AUTH SERVICE
     """
+    safe_username = urllib.parse.quote(username, safe="")
     return await _proxy_admin_request(
         request,
         "DELETE",
-        f"/admin/users/{username}",
+        f"/admin/users/{safe_username}",
         error_detail="Error deleting user",
         log_label="Error eliminando usuario (admin)",
         forward_session=True,
@@ -1066,10 +1096,11 @@ async def admin_user_block_info(username: str, request: Request):
     Devuelve los intentos de inicio de sesión fallidos con sus fechas y el
     número de veces que el usuario ha sido bloqueado.
     """
+    safe_username = urllib.parse.quote(username, safe="")
     return await _proxy_admin_request(
         request,
         "GET",
-        f"/admin/users/{username}/block-info",
+        f"/admin/users/{safe_username}/block-info",
         error_detail="Error fetching block info",
         log_label="Error obteniendo información de bloqueo (admin)",
     )

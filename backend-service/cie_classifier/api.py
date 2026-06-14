@@ -14,6 +14,7 @@ import logging
 import asyncio
 import time
 from typing import Annotated
+from fastapi import BackgroundTasks
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -123,7 +124,7 @@ async def register_search_log(
                     "query": query,
                     "top_k": top_k,
                     "results_count": results_count,
-                    "results": results,  # Pasar todos los resultados
+                    "results": results,
                     "ip_address": ip_address,
                     "status": status,
                     "error_message": error_message,
@@ -133,6 +134,70 @@ async def register_search_log(
                 },
                 timeout=2.0
             )
+    except Exception as e:
+        logger.warning(f"No se pudo registrar búsqueda en log-service: {e}")
+
+async def _handle_ai_enrichment(request: SearchRequest) -> dict:
+    """Gestiona la fase de IA y devuelve los parámetros enriquecidos."""
+    # Valores por defecto
+    result = {
+        "enriched_query": None,
+        "assistant_block": None,
+        "effective_used_ai": request.used_ai_assistant,
+        "effective_ai_suggestions": request.ai_suggestions
+    }
+
+    if not request.use_ai:
+        return result
+
+    ai_data = await enrich_query_with_ai(request.query)
+    if not ai_data:
+        return result
+
+    candidate = (ai_data.get("enriched_query") or "").strip()
+    if ai_data.get("is_valid_medical_query", True) and candidate:
+        result["enriched_query"] = candidate
+
+    result["assistant_block"] = {
+        "diagnostico": ai_data.get("diagnostico", ""),
+        "consejos_mejora": ai_data.get("consejos_mejora", []),
+        "enriched_query": ai_data.get("enriched_query", ""),
+        "is_valid_medical_query": ai_data.get("is_valid_medical_query", True),
+        "processing_time_ms": ai_data.get("processing_time_ms"),
+    }
+    result["effective_used_ai"] = True
+    result["effective_ai_suggestions"] = result["assistant_block"]
+
+    return result
+
+async def _safe_async_log(
+    session_id: str | None, user_id: str | None, request: SearchRequest, req: Request,
+    top_k: int, formatted_results: list, status: str, search_time_ms: float = 0.0,
+    effective_used_ai: bool = False, effective_ai_suggestions: dict | None = None,
+    error_message: str | None = None
+):
+    """Encapsula toda la lógica de logging de forma segura para no bloquear el hilo principal."""
+    if not (session_id and user_id):
+        return
+
+    try:
+        ip_address = req.client.host if getattr(req, "client", None) else "unknown"
+        results_for_log = [r.dict() if hasattr(r, 'dict') else r for r in formatted_results]
+        
+        await register_search_log(
+            session_id=session_id,
+            user_id=user_id,
+            query=request.query,
+            top_k=top_k,
+            results_count=len(results_for_log),
+            results=results_for_log,
+            ip_address=ip_address,
+            status=status,
+            used_ai_assistant=effective_used_ai,
+            ai_suggestions=effective_ai_suggestions,
+            search_time_ms=search_time_ms,
+            error_message=error_message
+        )
     except Exception as e:
         logger.warning(f"No se pudo registrar búsqueda en log-service: {e}")
 
@@ -260,101 +325,49 @@ async def health_check():
     }
 
 
-@app.post("/search", response_model=SearchResponse, responses={503: {"description": "Search engine not initialized"}, 
-                                                               500: {"description": INTERNAL_ERROR_DETAIL}})
-async def search_diagnosis(request: SearchRequest, req: Request, session_id: Annotated[str | None, Header()] = None, user_id: Annotated[str | None, Header()] = None):
-    """
-    Endpoint principal para buscar diagnósticos
+@app.post("/search", response_model=SearchResponse, responses={503: {"description": "Search engine not initialized"}, 500: {"description": INTERNAL_ERROR_DETAIL}})
+async def search_diagnosis(
+    request: SearchRequest, 
+    req: Request, 
+    background_tasks: BackgroundTasks,
+    session_id: Annotated[str | None, Header()] = None, 
+    user_id: Annotated[str | None, Header()] = None
+):
+    """Endpoint principal para buscar diagnósticos"""
     
-    Args:
-        request: Objeto con la query y top_k opcional
-        req: Request object
-        session_id: Session ID from header
-        user_id: User ID from header
-    
-    Returns:
-        SearchResponse con los resultados encontrados
-    """
     if not search_engine:
         raise HTTPException(status_code=503, detail="Search engine not initialized")
     
+    start_time = time.perf_counter()
+    session_id = session_id or req.headers.get("x-session-id")
+    user_id = user_id or req.headers.get("x-user-id")
+    
+    # Calcular top_k de forma limpia
+    requested_top_k = request.top_k if request.top_k and request.top_k > 0 else 5
+    top_k = min(requested_top_k, 20)
+
     try:
-        # Cronómetro del pipeline completo de búsqueda (IA + recuperación +
-        # re-ranking). Se mide en el backend para que el valor sea fiable y se
-        # devuelve al cliente y se persiste en el log, tanto en modo IA como sin
-        # IA.
-        start_time = time.perf_counter()
+        # 1. Pipeline de IA extraído
+        ai_params = await _handle_ai_enrichment(request)
 
-        # Obtener headers si no están en los parámetros
-        if not session_id:
-            session_id = req.headers.get("x-session-id")
-        if not user_id:
-            user_id = req.headers.get("x-user-id")
-        
-        # Obtener el top_k del request, con un máximo de 20
-        requested_top_k = request.top_k if request.top_k and request.top_k > 0 else 5
-        top_k = min(requested_top_k, 20)
-
-        # --- PIPELINE DE BÚSQUEDA CON IA (PRIMERA FASE) ---
-        # Cuando use_ai está activo, la IA enriquece la consulta antes de la
-        # recuperación. El bloque del asistente (diagnóstico + consejos) viaja
-        # aparte; los resultados conservan su estructura habitual.
-        enriched_query: Optional[str] = None
-        assistant_block: Optional[dict] = None
-        # Valores efectivos para el registro/log (en modo IA reflejan lo generado
-        # por esta fase; si el cliente ya los envió, se respetan como respaldo).
-        effective_used_ai = request.used_ai_assistant
-        effective_ai_suggestions = request.ai_suggestions
-
-        if request.use_ai:
-            ai_data = await enrich_query_with_ai(request.query)
-            if ai_data:
-                candidate = (ai_data.get("enriched_query") or "").strip()
-                # Solo usamos el texto enriquecido si la consulta es clínicamente
-                # interpretable y aporta contenido.
-                if ai_data.get("is_valid_medical_query", True) and candidate:
-                    enriched_query = candidate
-                assistant_block = {
-                    "diagnostico": ai_data.get("diagnostico", ""),
-                    "consejos_mejora": ai_data.get("consejos_mejora", []),
-                    "enriched_query": ai_data.get("enriched_query", ""),
-                    "is_valid_medical_query": ai_data.get("is_valid_medical_query", True),
-                    "processing_time_ms": ai_data.get("processing_time_ms"),
-                }
-                effective_used_ai = True
-                effective_ai_suggestions = assistant_block
-
-        # Realizar búsqueda (en modo IA con el texto enriquecido)
-        results = search_engine.search(request.query, top_k=top_k, enriched_query=enriched_query)
+        # 2. Búsqueda principal
+        results = search_engine.search(
+            request.query, 
+            top_k=top_k, 
+            enriched_query=ai_params["enriched_query"]
+        )
         logger.info("Búsqueda completada: %d resultados (IA=%s)", len(results), request.use_ai)
 
-        # Transformar resultados al formato esperado
+        # 3. Formateo y tiempos
         formatted_results = format_search_results(results)
-
-        # Tiempo total del pipeline (ms), redondeado a 2 decimales.
         search_time_ms = round((time.perf_counter() - start_time) * 1000, 2)
 
-        # Registrar búsqueda en log-service de forma asíncrona
-        if session_id and user_id:
-            try:
-                ip_address = req.client.host if req.client else "unknown"
-                # Convertir resultados a formato serializable
-                results_for_log = [result.dict() for result in formatted_results]
-                await register_search_log(
-                        session_id=session_id,
-                        user_id=user_id,
-                        query=request.query,
-                        top_k=top_k,
-                        results_count=len(formatted_results),
-                        results=results_for_log,
-                        ip_address=ip_address,
-                        status="success",
-                        used_ai_assistant=effective_used_ai,
-                        ai_suggestions=effective_ai_suggestions,
-                        search_time_ms=search_time_ms
-                    )
-            except Exception as e:
-                logger.warning(f"No se pudo registrar búsqueda en log-service: {e}")
+        # 4. Delegar el guardado del log a BackgroundTasks (Ruta de Éxito)
+        background_tasks.add_task(
+            _safe_async_log, session_id, user_id, request, req, top_k,
+            formatted_results, "success", search_time_ms,
+            ai_params["effective_used_ai"], ai_params["effective_ai_suggestions"]
+        )
         
         return SearchResponse(
             results=formatted_results,
@@ -362,29 +375,15 @@ async def search_diagnosis(request: SearchRequest, req: Request, session_id: Ann
             count=len(formatted_results),
             used_ai=request.use_ai,
             search_time_ms=search_time_ms,
-            assistant=assistant_block
+            assistant=ai_params["assistant_block"]
         )
     
     except Exception as e:
-        # Registrar error en log-service
-        if session_id and user_id:
-            try:
-                ip_address = req.client.host if req.client else "unknown"
-                await register_search_log(
-                        session_id=session_id,
-                        user_id=user_id,
-                        query=request.query,
-                        top_k=top_k if 'top_k' in locals() else 5,
-                        results_count=0,
-                        ip_address=ip_address,
-                        status="error",
-                        error_message=str(e),
-                        used_ai_assistant=request.used_ai_assistant,
-                        ai_suggestions=request.ai_suggestions
-                    )
-            except Exception as log_err:
-                logger.warning(f"No se pudo registrar error en log-service: {log_err}")
-        
+        # Delegar el guardado del log a BackgroundTasks
+        background_tasks.add_task(
+            _safe_async_log, session_id, user_id, request, req, top_k,
+            [], "error", 0.0, request.used_ai_assistant, request.ai_suggestions, str(e)
+        )
         logger.exception("Error en búsqueda: %s", e)
         raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
 

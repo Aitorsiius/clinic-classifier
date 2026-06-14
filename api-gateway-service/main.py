@@ -13,7 +13,7 @@ from functools import lru_cache
 import asyncio
 import logging
 from typing import Annotated
-from urllib.parse import urlparse
+import urllib.parse
 
 # ==========================================
 # CONFIGURACIÓN
@@ -38,7 +38,7 @@ def _require_env(name: str) -> str:
 
 def _is_valid_cors_origin(origin: str) -> bool:
     """Valida que un origen CORS sea seguro y no contenga caracteres peligrosos."""
-    parsed = urlparse(origin)
+    parsed = urllib.parse.urlparse(origin)
     if parsed.scheme not in ("http", "https"):
         return False
     if not parsed.netloc:
@@ -1082,10 +1082,11 @@ async def admin_unblock_user(username: str, request: Request):
     """
     Desbloquea a un usuario bloqueado por intentos fallidos (solo admin) - DELEGADO AL AUTH SERVICE
     """
+    safe_username = urllib.parse.quote(username, safe="")
     return await _proxy_admin_request(
         request,
         "POST",
-        f"/admin/users/{username}/unblock",
+        f"/admin/users/{safe_username}/unblock",
         error_detail="Error unblocking user",
         log_label="Error desbloqueando usuario (admin)",
         forward_session=True,

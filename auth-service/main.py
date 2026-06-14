@@ -615,7 +615,9 @@ async def health_check():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
-@app.post("/auth/login", response_model=LoginResponse, tags=["Authentication"])
+@app.post("/auth/login", response_model=LoginResponse, tags=["Authentication"], responses={401: {"description": "Invalid credentials"}, 
+                                                                                           403: {"description": "Account blocked"}, 
+                                                                                           503: {"description": "Database connection unavailable"}})
 async def login(request: LoginRequest, request_obj: Request):
     """
     Endpoint de login
@@ -706,7 +708,7 @@ async def login(request: LoginRequest, request_obj: Request):
         user_data=get_user_data(user)
     )
 
-@app.post("/auth/verify", response_model=VerifyTokenResponse, tags=["Authentication"])
+@app.post("/auth/verify", response_model=VerifyTokenResponse, tags=["Authentication"], responses={401: {"description": "Invalid token"}})
 async def verify(request: VerifyTokenRequest):
     """
     Endpoint para verificar la validez de un token
@@ -738,7 +740,7 @@ async def verify(request: VerifyTokenRequest):
             expires_at=None
         )
 
-@app.post("/auth/refresh", response_model=RefreshTokenResponse, tags=["Authentication"])
+@app.post("/auth/refresh", response_model=RefreshTokenResponse, tags=["Authentication"], responses={401: {"description": "Invalid token"}})
 async def refresh(request: RefreshTokenRequest):
     """
     Endpoint para renovar un token
@@ -769,7 +771,7 @@ async def refresh(request: RefreshTokenRequest):
         expires_in=expires_in
     )
 
-@app.get("/auth/validate-token", tags=["Authentication"])
+@app.get("/auth/validate-token", tags=["Authentication"], responses={401: {"description": "Invalid token"}})
 async def validate_token(token: str):
     """
     Endpoint auxiliar para validar token (parámetro en query)
@@ -791,7 +793,7 @@ async def validate_token(token: str):
         "expires_at": exp_datetime.isoformat()
     }
 
-@app.post("/auth/register", tags=["Authentication"])
+@app.post("/auth/register", tags=["Authentication"], responses={400: {"description": "User already exists or error creating user"}})
 async def register(user: User):
     """
     Endpoint para registrar un nuevo usuario
@@ -817,7 +819,8 @@ async def register(user: User):
 # ENDPOINTS DE ADMINISTRACIÓN
 # ==========================================
 
-@app.get("/admin/users", response_model=list, tags=["Admin Management"])
+@app.get("/admin/users", response_model=list, tags=["Admin Management"], responses={401: {"description": "Unauthorized"}, 
+                                                                                    403: {"description": "Admin access required"}})
 async def list_users(authorization: Annotated[str | None, Header()] = None):
     """
     Lista todos los usuarios (solo admin)
@@ -843,7 +846,10 @@ async def list_users(authorization: Annotated[str | None, Header()] = None):
         user["blocked"] = str(user.get("_id")) in blocked_user_ids
     return users
 
-@app.post("/admin/users", response_model=dict, tags=["Admin Management"])
+@app.post("/admin/users", response_model=dict, tags=["Admin Management"], responses={400: {"description": "User already exists or error creating user"}, 
+                                                                                     500: {"description": "Error retrieving created user"}, 
+                                                                                     401: {"description": "Unauthorized"},
+                                                                                     403: {"description": "Admin access required"}})
 async def create_new_user(
     request: CreateUserRequest,
     background_tasks: BackgroundTasks,
@@ -898,7 +904,11 @@ async def create_new_user(
         "user": get_user_data(user)
     }
 
-@app.put("/admin/users/{username}/role", response_model=dict, tags=["Admin Management"])
+@app.put("/admin/users/{username}/role", response_model=dict, tags=["Admin Management"], responses={400: {"description": "Cannot remove admin role from the last admin"}, 
+                                                                                                    404: {"description": USER_NOT_FOUND_DETAIL}, 
+                                                                                                    500: {"description": "Error updating user roles"},
+                                                                                                    401: {"description": "Unauthorized"},
+                                                                                                    403: {"description": "Admin access required"}})
 async def update_user_role(
     username: str,
     request: UpdateRoleRequest,
@@ -962,7 +972,11 @@ async def update_user_role(
         "user": get_user_data(updated_user)
     }
 
-@app.put("/admin/users/{username}/password", response_model=dict, tags=["Admin Management"])
+@app.put("/admin/users/{username}/password", response_model=dict, tags=["Admin Management"], responses={400: {"description": "Password must be at least 6 characters"}, 
+                                                                                                        404: {"description": "User not found"}, 
+                                                                                                        500: {"description": "Error updating password"}, 
+                                                                                                        401: {"description": "Unauthorized"},
+                                                                                                        403: {"description": "Admin access required"}})
 async def change_user_password(
     username: str,
     request: UpdatePasswordRequest,
@@ -1015,7 +1029,11 @@ async def change_user_password(
         "username": username
     }
 
-@app.delete("/admin/users/{username}", response_model=dict, tags=["Admin Management"])
+@app.delete("/admin/users/{username}", response_model=dict, tags=["Admin Management"], responses={400: {"description": "Cannot delete your own account"}, 
+                                                                                                  404: {"description": "User not found"}, 
+                                                                                                  500: {"description": "Error deleting user"},
+                                                                                                  401: {"description": "Unauthorized"},
+                                                                                                  403: {"description": "Admin access required"}})
 async def delete_existing_user(
     username: str,
     background_tasks: BackgroundTasks,
@@ -1074,7 +1092,10 @@ async def delete_existing_user(
         "username": username
     }
 
-@app.get("/admin/users/{username}/block-info", response_model=dict, tags=["Admin Management"])
+@app.get("/admin/users/{username}/block-info", response_model=dict, tags=["Admin Management"], responses={404: {"description": USER_NOT_FOUND_DETAIL}, 
+                                                                                                          503: {"description": DB_UNAVAILABLE_DETAIL},
+                                                                                                          401: {"description": "Unauthorized"},
+                                                                                                          403: {"description": "Admin access required"}})
 async def get_user_block_info(
     username: str,
     authorization: Annotated[str | None, Header()] = None,
@@ -1115,7 +1136,11 @@ async def get_user_block_info(
     info["username"] = username
     return info
 
-@app.post("/admin/users/{username}/unblock", response_model=dict, tags=["Admin Management"])
+@app.post("/admin/users/{username}/unblock", response_model=dict, tags=["Admin Management"], responses={404: {"description": USER_NOT_FOUND_DETAIL}, 
+                                                                                                      503: {"description": DB_UNAVAILABLE_DETAIL}, 
+                                                                                                      400: {"description": "User is not blocked"},
+                                                                                                      401: {"description": "Unauthorized"},
+                                                                                                      403: {"description": "Admin access required"}})
 async def unblock_user(
     username: str,
     background_tasks: BackgroundTasks,

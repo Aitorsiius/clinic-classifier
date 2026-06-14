@@ -13,6 +13,7 @@ import httpx
 import logging
 import asyncio
 import time
+from typing import Annotated
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -259,8 +260,9 @@ async def health_check():
     }
 
 
-@app.post("/search", response_model=SearchResponse)
-async def search_diagnosis(request: SearchRequest, req: Request, session_id: Optional[str] = Header(None), user_id: Optional[str] = Header(None)):
+@app.post("/search", response_model=SearchResponse, responses={503: {"description": "Search engine not initialized"}, 
+                                                               500: {"description": INTERNAL_ERROR_DETAIL}})
+async def search_diagnosis(request: SearchRequest, req: Request, session_id: Annotated[str | None, Header()] = None, user_id: Annotated[str | None, Header()] = None):
     """
     Endpoint principal para buscar diagnósticos
     
@@ -338,8 +340,7 @@ async def search_diagnosis(request: SearchRequest, req: Request, session_id: Opt
                 ip_address = req.client.host if req.client else "unknown"
                 # Convertir resultados a formato serializable
                 results_for_log = [result.dict() for result in formatted_results]
-                asyncio.create_task(
-                    register_search_log(
+                await register_search_log(
                         session_id=session_id,
                         user_id=user_id,
                         query=request.query,
@@ -352,7 +353,6 @@ async def search_diagnosis(request: SearchRequest, req: Request, session_id: Opt
                         ai_suggestions=effective_ai_suggestions,
                         search_time_ms=search_time_ms
                     )
-                )
             except Exception as e:
                 logger.warning(f"No se pudo registrar búsqueda en log-service: {e}")
         
@@ -370,8 +370,7 @@ async def search_diagnosis(request: SearchRequest, req: Request, session_id: Opt
         if session_id and user_id:
             try:
                 ip_address = req.client.host if req.client else "unknown"
-                asyncio.create_task(
-                    register_search_log(
+                await register_search_log(
                         session_id=session_id,
                         user_id=user_id,
                         query=request.query,
@@ -383,14 +382,13 @@ async def search_diagnosis(request: SearchRequest, req: Request, session_id: Opt
                         used_ai_assistant=request.used_ai_assistant,
                         ai_suggestions=request.ai_suggestions
                     )
-                )
             except Exception as log_err:
                 logger.warning(f"No se pudo registrar error en log-service: {log_err}")
         
         logger.exception("Error en búsqueda: %s", e)
         raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
 
-@app.post("/export-csv")
+@app.post("/export-csv", responses={500: {"description": INTERNAL_ERROR_DETAIL}})
 async def export_results(records: List[dict]):
     """Exportar resultados a CSV"""
     try:

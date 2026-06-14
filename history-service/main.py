@@ -18,6 +18,7 @@ from pymongo import MongoClient
 from pymongo.errors import ServerSelectionTimeoutError
 import logging
 import jwt
+from typing import Annotated
 
 # ==========================================
 # CONFIGURACIÓN
@@ -55,6 +56,7 @@ ALLOWED_ORIGINS = [
 ]
 # Mensaje genérico para respuestas 5xx: evita filtrar detalles internos.
 INTERNAL_ERROR_DETAIL = "Internal server error"
+MONGODB_CONNECTION_ERROR_DETAIL = "MongoDB connection error"
 
 # ==========================================
 # LOGGING
@@ -181,12 +183,12 @@ app.add_middleware(
 def health_check():
     """Health check del servicio"""
     if searches_collection is None:
-        return {"status": "error", "message": "MongoDB not connected"}
+        return {"status": "error", "message": MONGODB_CONNECTION_ERROR_DETAIL}
     return {"status": "ok", "service": "history-service"}
 
-@app.get("/history")
+@app.get("/history", responses={500: {"description": MONGODB_CONNECTION_ERROR_DETAIL}})
 async def get_search_history(
-    username: str = Depends(get_user_from_token),
+    username: Annotated[str, Depends(get_user_from_token)],
     limit: int = 100
 ):
     """
@@ -202,7 +204,7 @@ async def get_search_history(
     """
     try:
         if searches_collection is None:
-            raise HTTPException(status_code=500, detail="MongoDB connection error")
+            raise HTTPException(status_code=500, detail=MONGODB_CONNECTION_ERROR_DETAIL)
         
         # Primero, obtener el user_id (ObjectId) del usuario desde la colección users
         users_collection = db['users']
@@ -299,9 +301,9 @@ async def get_search_history(
         logger.exception(f"Error al obtener historial de búsquedas: {e}")
         raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
 
-@app.get("/history/count")
+@app.get("/history/count", responses={500: {"description": MONGODB_CONNECTION_ERROR_DETAIL}})
 async def get_history_count(
-    username: str = Depends(get_user_from_token)
+    username: Annotated[str, Depends(get_user_from_token)]
 ):
     """
     Obtiene el número total de búsquedas en el historial del usuario
@@ -314,7 +316,7 @@ async def get_history_count(
     """
     try:
         if searches_collection is None:
-            raise HTTPException(status_code=500, detail="MongoDB connection error")
+            raise HTTPException(status_code=500, detail=MONGODB_CONNECTION_ERROR_DETAIL)
         
         # Obtener el user_id (ObjectId) del usuario
         users_collection = db['users']
@@ -340,9 +342,9 @@ async def get_history_count(
         logger.exception(f"Error al contar búsquedas: {e}")
         raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
 
-@app.get("/history/recent")
+@app.get("/history/recent", responses={500: {"description": MONGODB_CONNECTION_ERROR_DETAIL}})
 async def get_recent_searches(
-    username: str = Depends(get_user_from_token),
+    username: Annotated[str, Depends(get_user_from_token)],
     limit: int = 10
 ):
     """
@@ -357,7 +359,7 @@ async def get_recent_searches(
     """
     try:
         if searches_collection is None:
-            raise HTTPException(status_code=500, detail="MongoDB connection error")
+            raise HTTPException(status_code=500, detail=MONGODB_CONNECTION_ERROR_DETAIL)
         
         # Obtener el user_id (ObjectId) del usuario
         users_collection = db['users']

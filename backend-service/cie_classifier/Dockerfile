@@ -18,7 +18,9 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir --only-binary :all: -r requirements.txt
 
 # Copiar el código de la aplicación
-COPY . .
+COPY main.py .
+COPY api.py .
+COPY cie10_qdrant/ /qdrant/storage/
 
 # Exponer puerto
 EXPOSE 8000

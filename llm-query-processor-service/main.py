@@ -7,12 +7,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from typing import List
 import uvicorn
-from google.auth.transport.requests import Request
-from google.oauth2.service_account import Credentials
-import google.auth
-from google.cloud import aiplatform
 import vertexai
 from vertexai.generative_models import GenerativeModel
 
@@ -271,15 +266,21 @@ Consulta del usuario: {query}"""
 async def health():
     return {"status": "ok", "service": "llm-query-processor"}
 
-@app.post("/analyze")
+@app.post("/analyze", responses={429: {"description": "Cuota de Vertex AI agotada"}, 
+                                 403: {"description": "Permiso denegado en Vertex AI"}, 
+                                 500: {"description": "Internal server error"}})
 async def analyze(request: QueryRequest):
     return analyze_query(request.query)
 
-@app.post("/correct")
+@app.post("/correct", responses={429: {"description": "Cuota de Vertex AI agotada"}, 
+                                 403: {"description": "Permiso denegado en Vertex AI"}, 
+                                 500: {"description": "Internal server error"}})
 async def correct(request: QueryRequest):
     return correct_query(request.query)
 
-@app.post("/process")
+@app.post("/process", responses={429: {"description": "Cuota de Vertex AI agotada"}, 
+                                 403: {"description": "Permiso denegado en Vertex AI"}, 
+                                 500: {"description": "Internal server error"}})
 async def process(request: QueryRequest):
     start_time = time.time()
     corrected = correct_query(request.query)
@@ -293,7 +294,9 @@ async def process(request: QueryRequest):
         "processing_time_ms": processing_time_ms
     }
 
-@app.post("/ai-search")
+@app.post("/ai-search", responses={429: {"description": "Cuota de Vertex AI agotada"}, 
+                                   403: {"description": "Permiso denegado en Vertex AI"}, 
+                                   500: {"description": "Internal server error"}})
 async def ai_search(request: QueryRequest):
     """Primera fase del pipeline de búsqueda con IA (una sola llamada al LLM).
 

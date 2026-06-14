@@ -24,6 +24,7 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 import logging
 from typing import Annotated
+import urllib.parse
 
 # Importar módulo de auditoría
 from audit import (
@@ -511,10 +512,11 @@ async def get_audit_report(
         HTTPException: Si el reporte no existe
     """
     try:
+        safe_audit_id = urllib.parse.quote(audit_id, safe="")
         # Obtener del backend a través del gateway
         async with httpx.AsyncClient() as client:
             response = await client.get(
-                f"{API_GATEWAY_URL}/api/audit/{audit_id}",
+                f"{API_GATEWAY_URL}/api/audit/{safe_audit_id}",
                 timeout=10
             )
         

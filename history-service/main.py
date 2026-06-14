@@ -7,6 +7,8 @@ Microservicio responsable de:
 - Permitir consultas y filtros sobre el historial
 """
 
+import re
+
 from fastapi import FastAPI, HTTPException, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -156,6 +158,16 @@ def get_user_from_token(authorization: str = Header(None)) -> str:
         return username
     except ValueError:
         raise HTTPException(status_code=401, detail="Invalid authorization header")
+    
+def sanitize_log(data: str) -> str:
+    """
+    Sanitiza strings reemplazando saltos de línea y retornos de carro 
+    por espacios para evitar vulnerabilidades de Log Injection (CRLF).
+    """
+    if data is None:
+        return ""
+    # Convertimos a string por si llega un int u otro tipo
+    return re.sub(r'[\r\n]', ' ', str(data))
 
 # ==========================================
 # INICIALIZACIÓN FASTAPI
@@ -211,7 +223,7 @@ async def get_search_history(
         user_doc = users_collection.find_one({"username": username})
         
         if not user_doc:
-            logger.warning(f"Usuario no encontrado: {username}")
+            logger.warning(f"Usuario no encontrado: {sanitize_log(username)}")
             return SearchHistoryResponse(
                 user_id=username,
                 total=0,
@@ -286,7 +298,7 @@ async def get_search_history(
         
         total_count = len(searches_docs)
         
-        logger.info(f"Historial obtenido para usuario {username}: {total_count} búsquedas")
+        logger.info(f"Historial obtenido para usuario {sanitize_log(username)}: {total_count} búsquedas")
         
         return {
             "user_id": username,  # Retornar username para consistencia

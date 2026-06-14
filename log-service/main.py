@@ -484,7 +484,7 @@ async def register_search(search: SearchRecord):
         result = searches_collection.insert_one(search_doc)
         
         if result.inserted_id:
-            logger.info(f"Búsqueda registrada: {search_id} - Query: {search.query}")
+            logger.info(f"Búsqueda registrada: {sanitize_log(search_id)} - Query: {sanitize_log(search.query)}")
             return SearchResponse(
                 search_id=search_id,
                 session_id=search.session_id,

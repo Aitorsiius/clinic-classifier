@@ -4,10 +4,10 @@ uvicorn[standard]==0.30.0
 pydantic==2.8.0
 
 # HTTP Client
-requests==2.31.0
+requests==2.33.0
 
 # Utilities
-python-dotenv==1.0.0
+python-dotenv==1.2.2
 
 # Google Cloud - Vertex AI
 google-cloud-aiplatform==1.42.0

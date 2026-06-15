@@ -90,7 +90,7 @@ export function Filters({ algorithm, setAlgorithm, topK, setTopK, isLoading = fa
                       max="20"
                       step="1"
                       value={topK}
-                      onChange={(e) => setTopK(parseInt(e.target.value))}
+                      onChange={(e) => setTopK(Number.parseInt(e.target.value))}
                       disabled={isLoading}
                       className="w-full h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500/50 disabled:opacity-50 disabled:cursor-not-allowed"
                     />

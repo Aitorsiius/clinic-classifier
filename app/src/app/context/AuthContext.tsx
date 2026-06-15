@@ -239,7 +239,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let elapsedMs = 0;
     const startedRaw = sessionStorage.getItem('session_startedAt');
     if (startedRaw) {
-      const startedAt = parseInt(startedRaw, 10);
+      const startedAt = Number.parseInt(startedRaw, 10);
       if (!Number.isNaN(startedAt)) {
         elapsedMs = Math.max(0, Date.now() - startedAt);
       }

@@ -136,7 +136,7 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const [sessionStats, setSessionStats] = useState<SessionStats>(EMPTY_SESSION_STATS);
   const [sessionStartedAt, setSessionStartedAt] = useState<number>(() => {
     const saved = sessionStorage.getItem('session_startedAt');
-    if (saved) return parseInt(saved, 10);
+    if (saved) return Number.parseInt(saved, 10);
     const now = Date.now();
     sessionStorage.setItem('session_startedAt', String(now));
     return now;
@@ -247,19 +247,19 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (savedSearchText) setSearchText(savedSearchText);
     if (savedResults) setResults(JSON.parse(savedResults));
     if (savedAlgorithm) setAlgorithm(savedAlgorithm);
-    if (savedTopK) setTopK(parseInt(savedTopK));
+    if (savedTopK) setTopK(Number.parseInt(savedTopK));
     if (savedUseAI) setUseAI(savedUseAI === 'true');
     if (savedAiAnalysis) setAiAnalysis(JSON.parse(savedAiAnalysis));
-    if (savedSearchTimeMs) setSearchTimeMs(savedSearchTimeMs === 'null' ? null : parseFloat(savedSearchTimeMs));
+    if (savedSearchTimeMs) setSearchTimeMs(savedSearchTimeMs === 'null' ? null : Number.parseFloat(savedSearchTimeMs));
     if (savedIsLoading) setIsLoading(savedIsLoading === 'true');
     if (savedCSVData) setCSVData(JSON.parse(savedCSVData));
     if (savedFileName) setFileName(savedFileName);
     if (savedAuditAlgorithm) setAuditAlgorithm(savedAuditAlgorithm);
-    if (savedAuditTopK) setAuditTopK(parseInt(savedAuditTopK));
+    if (savedAuditTopK) setAuditTopK(Number.parseInt(savedAuditTopK));
     if (savedAuditUseAI) setAuditUseAI(savedAuditUseAI === 'true');
     if (savedIsProcessing) setIsProcessing(savedIsProcessing === 'true');
-    if (savedAuditProgress) setAuditProgress(parseInt(savedAuditProgress));
-    if (savedAuditStartTime) setAuditStartTime(savedAuditStartTime === 'null' ? null : parseInt(savedAuditStartTime, 10));
+    if (savedAuditProgress) setAuditProgress(Number.parseInt(savedAuditProgress));
+    if (savedAuditStartTime) setAuditStartTime(savedAuditStartTime === 'null' ? null : Number.parseInt(savedAuditStartTime, 10));
     if (savedAuditReport) setAuditReport(JSON.parse(savedAuditReport));
     if (savedAuditNotification) setAuditNotification(savedAuditNotification === 'true');
     if (savedSearchNotification) setSearchNotification(savedSearchNotification === 'true');

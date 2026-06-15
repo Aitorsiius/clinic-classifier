@@ -390,7 +390,7 @@ export function AuditResults({ report }: AuditResultsProps) {
                           {finding.alternative_codes.length > 0 && (
                             <div className="bg-white rounded border-2 border-blue-200 p-3">
                               <p className="text-xs text-blue-700 font-semibold mb-2">
-                                Códigos Alternativos {report.top_k && `(${finding.alternative_codes.length} candidatos)`}
+                                Códigos Alternativos {(Boolean(report.top_k) && `(${finding.alternative_codes.length} candidatos)`)}
                               </p>
                               <div className="flex flex-wrap gap-2">
                                 {finding.alternative_codes.map((code, i) => {

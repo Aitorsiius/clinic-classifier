@@ -116,8 +116,8 @@ export function UsersTable({
   }, [filteredUsers, page, pageSize]);
 
   const commitPageInput = () => {
-    const value = parseInt(pageInput, 10);
-    if (isNaN(value)) {
+    const value = Number.parseInt(pageInput, 10);
+    if (Number.isNaN(value)) {
       setPageInput(String(page));
       return;
     }

@@ -18,5 +18,5 @@ pytest-cov>=5.0
 
 # Necesarias para importar los servicios bajo test y que faltan
 # habitualmente en el .venv:
-PyJWT==2.12.1          # 'import jwt' en auth, gateway e history
+PyJWT==2.13.0          # 'import jwt' en auth, gateway e history
 email-validator>=2.0   # 'EmailStr' de pydantic en auth y gateway

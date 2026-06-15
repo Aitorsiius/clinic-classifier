@@ -12,15 +12,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Copiar requirements
-COPY requirements.txt .
+COPY cie_classifier/requirements.txt .
 
 # Instalar dependencias de Python
 RUN pip install --no-cache-dir --only-binary :all: -r requirements.txt
 
 # Copiar el código de la aplicación
-COPY main.py .
-COPY api.py .
-COPY cie10_qdrant/ /qdrant/storage/
+COPY cie_classifier/main.py .
+COPY cie_classifier/api.py .
+COPY cie10_qdrant/ ./cie10_qdrant/
 
 # Exponer puerto
 EXPOSE 8000

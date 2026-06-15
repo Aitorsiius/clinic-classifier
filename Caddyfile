@@ -1,0 +1,9 @@
+localhost {
+    tls internal
+    reverse_proxy app:80
+}
+
+localhost:3000 {
+    tls internal
+    reverse_proxy api-gateway:3000
+}

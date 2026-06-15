@@ -181,8 +181,8 @@ services:
   # Backend - Clasificador CIE-10
   backend:
     build:
-      context: ./backend-service/cie_classifier
-      dockerfile: Dockerfile
+      context: ./backend-service
+      dockerfile: cie_classifier/Dockerfile
     image: cie10-backend:latest
     container_name: cie10-backend
     ports:
@@ -216,8 +216,6 @@ services:
       dockerfile: Dockerfile
     image: cie10-gateway:latest
     container_name: cie10-gateway
-    ports:
-      - "3000:3000"
     environment:
       - BACKEND_URL=http://backend:8000
       - LLM_QUERY_PROCESSOR_URL=http://llm-query-processor:8003
@@ -255,11 +253,9 @@ services:
       context: ./app
       dockerfile: Dockerfile
       args:
-        - API_GATEWAY_URL=http://localhost:3000
+        - API_GATEWAY_URL=https://localhost:3000
     image: cie10-frontend:latest
     container_name: cie10-frontend
-    ports:
-      - "80:80"
     depends_on:
       api-gateway:
         condition: service_healthy
@@ -272,6 +268,24 @@ services:
       timeout: 10s
       retries: 5
 
+  caddy:
+    image: caddy:alpine
+    container_name: cie10-caddy
+    ports:
+      - "80:80"
+      - "443:443"
+      - "3000:3000"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+      - api-gateway
+    networks:
+      - clinic-classifier-network
+    restart: unless-stopped
+
 networks:
   clinic-classifier-network:
     driver: bridge
@@ -279,3 +293,5 @@ networks:
 volumes:
   embeddings-data:
   huggingface-cache:
+  caddy_data:
+  caddy_config:

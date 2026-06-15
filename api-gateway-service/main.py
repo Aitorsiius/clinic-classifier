@@ -413,7 +413,8 @@ async def health_check():
                 response = await client.get(f"{LLM_QUERY_PROCESSOR_URL}/health")
                 llm_status = response.json()
         except Exception as e:
-            llm_status = {"status": f"unhealthy - {str(e)}"}
+            logger.exception("LLM processor health check failed")
+            llm_status = {"status": "unhealthy"}
         
         return {
             "gateway": "healthy",
@@ -421,11 +422,12 @@ async def health_check():
             "llm_processor": llm_status
         }
     except Exception as e:
+        logger.exception("Backend health check failed")
         return JSONResponse(
             status_code=503,
             content={
                 "gateway": "healthy",
-                "backend": f"unhealthy - {str(e)}"
+                "backend": "unhealthy"
             }
         )
 

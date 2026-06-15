@@ -4,11 +4,11 @@ uvicorn[standard]==0.27.0
 pydantic==2.5.3
 
 # HTTP Client
-requests==2.33.0
+requests==2.34.2
 httpx==0.25.2
 
 # Vector Database
-qdrant-client==1.9.0
+qdrant-client==1.18.0
 
 # Utilities
 python-dotenv==1.2.2

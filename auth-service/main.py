@@ -59,7 +59,7 @@ LOG_SERVICE_URL = os.getenv("LOG_SERVICE_URL", "http://localhost:8006")
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
-        "ALLOWED_ORIGINS", "http://localhost,http://localhost:3000"
+        "ALLOWED_ORIGINS", "https://localhost,https://localhost:3000"
     ).split(",")
     if origin.strip()
 ]

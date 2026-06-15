@@ -10,7 +10,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 os.environ.setdefault("JWT_SECRET", "test-secret-key-not-for-production")
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
-os.environ.setdefault("ALLOWED_ORIGINS", "http://localhost")
+os.environ.setdefault("ALLOWED_ORIGINS", "https://localhost")
 
 import pymongo
 from pymongo.errors import ServerSelectionTimeoutError

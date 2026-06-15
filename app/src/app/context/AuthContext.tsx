@@ -72,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3000';
+  const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL;
 
   const isValidJWT = (token: string | null): boolean => {
     if (!token) return false;

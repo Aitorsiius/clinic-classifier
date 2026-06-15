@@ -5,7 +5,10 @@ FROM mcr.microsoft.com/devcontainers/javascript-node:20 AS builder
 WORKDIR /app
 
 # Argumento para la URL del API Gateway
-ARG API_GATEWAY_URL=http://localhost:3000
+ARG API_GATEWAY_URL=https://localhost:3000
+
+# Creamos la variable de entorno nativa con el prefijo VITE_ para que Vite la reconozca
+ENV VITE_API_GATEWAY_URL=${API_GATEWAY_URL}
 
 # Copiar package files
 COPY package.json package-lock.json* ./
@@ -15,9 +18,6 @@ RUN npm install
 
 # Copiar el resto del código
 COPY . .
-
-# Crear archivo .env con la URL del API Gateway
-RUN echo "API_GATEWAY_URL=${API_GATEWAY_URL}" > .env
 
 # Construir la aplicación
 RUN npm run build

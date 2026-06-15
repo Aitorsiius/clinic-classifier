@@ -43,7 +43,7 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
 
   const { token } = useAuth();
 
-  const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL || 'http://localhost:3000';
+  const API_GATEWAY_URL = import.meta.env.VITE_API_GATEWAY_URL;
 
   const isValidId = (id: string | null): boolean => {
     if (!id) return false;

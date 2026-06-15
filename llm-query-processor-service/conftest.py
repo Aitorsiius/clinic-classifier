@@ -17,7 +17,7 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 os.environ.setdefault("ID", "test-project")
 os.environ.setdefault("LOCATION", "europe-west1")
-os.environ.setdefault("ALLOWED_ORIGINS", "http://localhost")
+os.environ.setdefault("ALLOWED_ORIGINS", "https://localhost")
 
 
 def _fake_module(name):

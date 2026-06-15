@@ -66,7 +66,7 @@ JWT_EXPIRATION_HOURS = int(os.getenv("JWT_EXPIRATION_HOURS", "24"))
 HOST = os.getenv("HOST", "0.0.0.0")
 # Orígenes permitidos para CORS (configurables por entorno). Por defecto solo
 # el frontend local; nunca "*" junto con cookies/credenciales.
-raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost,http://localhost:3000")
+raw_origins = os.getenv("ALLOWED_ORIGINS", "https://localhost,https://localhost:3000")
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in raw_origins.split(",")

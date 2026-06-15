@@ -225,7 +225,7 @@ services:
       - HISTORY_SERVICE_URL=http://history-service:8007
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGORITHM=${JWT_ALGORITHM}
-      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost,http://localhost:3000}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-https://localhost,https://localhost:3000}
     depends_on:
       backend:
         condition: service_healthy

@@ -37,7 +37,7 @@ MONGO_CONNECTION = os.getenv("MONGO_CONNECTION", "mongodb://localhost:27017/clin
 ALLOWED_ORIGINS = [
     origin.strip()
     for origin in os.getenv(
-        "ALLOWED_ORIGINS", "http://localhost,http://localhost:3000"
+        "ALLOWED_ORIGINS", "https://localhost,https://localhost:3000"
     ).split(",")
     if origin.strip()
 ]

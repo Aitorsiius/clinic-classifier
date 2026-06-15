@@ -923,9 +923,9 @@ async def update_ai_analysis(body: dict):
     except httpx.ConnectError:
         logger.warning("Cannot connect to log service")
         return {"status": "warning", "message": "Cannot connect to log service"}
-    except Exception as e:
-        logger.warning(f"Gateway error updating AI analysis: {str(e)}")
-        return {"status": "warning", "message": str(e)}
+    except Exception:
+        logger.exception("Gateway error updating AI analysis")
+        return {"status": "warning", "message": "Internal error updating AI analysis"}
 
 # ==========================================
 # ENDPOINTS DE ADMINISTRACIÓN

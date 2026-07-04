@@ -7,6 +7,8 @@ Microservicio responsable de:
 - Renovación de tokens
 """
 
+import re
+
 from fastapi import FastAPI, HTTPException, Request, Depends, Header, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, EmailStr
@@ -28,6 +30,17 @@ from rate_limiter import LoginRateLimiter
 # ==========================================
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def sanitize_log(data: str) -> str:
+    """
+    Sanitiza strings reemplazando saltos de línea y retornos de carro 
+    por espacios para evitar vulnerabilidades de Log Injection (CRLF).
+    """
+    if data is None:
+        return ""
+    # Convertimos a string por si llega un int u otro tipo
+    return re.sub(r'[\r\n]', ' ', str(data))
 
 
 def _require_env(name: str) -> str:
@@ -462,7 +475,7 @@ def delete_user(username: str) -> bool:
         # Obtener el user_id antes de eliminar el usuario
         user = users_collection.find_one({"username": username})
         if not user:
-            logger.warning("Usuario '%s' no encontrado para eliminar", username)
+            logger.warning("Usuario '%s' no encontrado para eliminar", sanitize_log(username))
             return False
         
         user_id = str(user.get("_id"))

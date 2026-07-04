@@ -347,7 +347,7 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
               ? 'border-blue-500 bg-blue-50'
               : 'border-gray-300 hover:border-gray-400'
           }`}
-        role="button">
+        >
           <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
           <p className="text-lg font-medium text-gray-700 mb-2">
             Arrastra tu archivo CSV aquí

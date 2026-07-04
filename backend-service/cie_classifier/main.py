@@ -40,8 +40,8 @@ _WILDCARD_PATTERNS = [
 ]
 _WILDCARD_REGEX = re.compile("|".join(_WILDCARD_PATTERNS), flags=re.IGNORECASE)
 # Limpieza de puntuación/espacios que quedan colgando tras eliminar la coletilla.
-_DANGLING_PUNCT_REGEX = re.compile(r"\s*([,;:])(?=\s*[,;:])")
-_TRAILING_PUNCT_REGEX = re.compile(r"[\s,;:.\-]+$")
+_DANGLING_PUNCT_REGEX = re.compile(r"[,;:]\s*(?=[,;:])")
+_TRAILING_PUNCT_CHARS = " \t\n\r\f\v,;:.-"
 _LEADING_PUNCT_REGEX = re.compile(r"^[\s,;:.\-]+")
 _MULTISPACE_REGEX = re.compile(r"\s{2,}")
 
@@ -63,7 +63,7 @@ def neutralize_wildcard_terms(text: str) -> str:
     cleaned = _MULTISPACE_REGEX.sub(" ", cleaned)
     cleaned = _DANGLING_PUNCT_REGEX.sub("", cleaned)
     cleaned = _LEADING_PUNCT_REGEX.sub("", cleaned)
-    cleaned = _TRAILING_PUNCT_REGEX.sub("", cleaned)
+    cleaned = cleaned.rstrip(_TRAILING_PUNCT_CHARS)
     return cleaned.strip()
 
 

@@ -53,5 +53,5 @@ export function cleanDiagnosisText(text: string | null | undefined): string {
     }
   }
   // Comillas dobles escapadas del formato CSV ("") -> comilla simple.
-  return cleaned.replace(/""/g, '"').trim();
+  return cleaned.replaceAll('""', '"').trim();
 }

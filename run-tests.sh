@@ -22,7 +22,7 @@ fi
 services=(
   "audit-service:audit"
   "auth-service:auth"
-  "api-gateway-service:gateway"
+  "api-gateway:gateway"
   "backend-service/cie_classifier:backend"
   "history-service:history"
   "log-service:log"

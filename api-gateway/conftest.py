@@ -1,4 +1,4 @@
-"""Configuración de pytest para api-gateway-service.
+"""Configuración de pytest para api-gateway.
 
 Añade el directorio del servicio al ``sys.path`` y define el ``JWT_SECRET``
 obligatorio para poder importar ``main`` sin abortar el arranque.

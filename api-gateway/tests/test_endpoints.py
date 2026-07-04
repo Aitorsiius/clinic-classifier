@@ -1,4 +1,4 @@
-"""Tests de endpoints y helpers de ``api-gateway-service/main.py``.
+"""Tests de endpoints y helpers de ``api-gateway/main.py``.
 
 Cubren ``get_current_user``, ``get_client_ip`` y los endpoints que no dependen
 de otros microservicios (``/``, ``/api/verify-token``, ``/auth/verify``).

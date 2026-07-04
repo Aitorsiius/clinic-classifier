@@ -158,7 +158,7 @@ class SearchRecord(BaseModel):
     # Campos del asistente de IA (nuevo pipeline de búsqueda con IA).
     used_ai_assistant: bool = False  # Si la búsqueda se ejecutó con IA
     # ai_suggestions: bloque del asistente devuelto por la primera fase del LLM.
-    # Nueva forma: {diagnostico, consejos_mejora[], enriched_query,
+    # Nueva forma: {diagnosis, improvement_tips[], enriched_query,
     # is_valid_medical_query, processing_time_ms}.
     ai_suggestions: Optional[dict] = None
 
@@ -175,7 +175,6 @@ class AuditRecord(BaseModel):
     session_id: str
     user_id: str
     records_count: int
-    algorithm: Optional[str] = None
     top_k: Optional[int] = None
     use_ai: bool = False
     # Tiempo total (ms) del lote de auditoría (con o sin IA).
@@ -542,7 +541,7 @@ async def update_search_ai_analysis(update: AIAnalysisUpdate):
         ai_analysis_data = update.ai_analysis
         
         # Actualizar la búsqueda con el bloque del asistente (nueva forma:
-        # diagnostico + consejos_mejora + enriched_query). Se mantiene la
+        # diagnosis + improvement_tips + enriched_query). Se mantiene la
         # tolerancia a claves ausentes para no romper registros antiguos.
         update_result = searches_collection.update_one(
             {"_id": search_doc["_id"]},
@@ -550,8 +549,8 @@ async def update_search_ai_analysis(update: AIAnalysisUpdate):
                 "$set": {
                     "used_ai_assistant": True,
                     "ai_suggestions": {
-                        "diagnostico": ai_analysis_data.get("diagnostico", ""),
-                        "consejos_mejora": ai_analysis_data.get("consejos_mejora", []),
+                        "diagnosis": ai_analysis_data.get("diagnosis", ""),
+                        "improvement_tips": ai_analysis_data.get("improvement_tips", []),
                         "enriched_query": ai_analysis_data.get("enriched_query", ""),
                         "is_valid_medical_query": ai_analysis_data.get("is_valid_medical_query", True),
                         "processing_time_ms": ai_analysis_data.get("processing_time_ms")
@@ -608,7 +607,6 @@ async def register_audit(audit: AuditRecord):
             "session_id": audit.session_id,
             "user_id": audit.user_id,
             "records_count": audit.records_count,
-            "algorithm": audit.algorithm,
             "top_k": audit.top_k,
             "use_ai": audit.use_ai,
             "total_time_ms": audit.total_time_ms,

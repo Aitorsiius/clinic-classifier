@@ -50,8 +50,6 @@ interface SessionContextType {
   setSearchText: (text: string) => void;
   results: DiagnosisResult[];
   setResults: (results: DiagnosisResult[]) => void;
-  algorithm: string;
-  setAlgorithm: (algo: string) => void;
   topK: number;
   setTopK: (k: number) => void;
   useAI: boolean;
@@ -70,8 +68,6 @@ interface SessionContextType {
   setCSVData: (data: CSVRow[] | null) => void;
   fileName: string;
   setFileName: (name: string) => void;
-  auditAlgorithm: string;
-  setAuditAlgorithm: (algo: string) => void;
   auditTopK: number;
   setAuditTopK: (k: number) => void;
   // Ejecuta la auditoría a través del pipeline de búsqueda con IA.
@@ -110,7 +106,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // Clasificación
   const [searchText, setSearchText] = useState('');
   const [results, setResults] = useState<DiagnosisResult[]>([]);
-  const [algorithm, setAlgorithm] = useState('algoritmo1');
   const [topK, setTopK] = useState(5);
   const [useAI, setUseAI] = useState(false);
   const [aiAnalysis, setAiAnalysis] = useState<any>(null);
@@ -120,7 +115,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   // Auditoría
   const [csvData, setCSVData] = useState<CSVRow[] | null>(null);
   const [fileName, setFileName] = useState('');
-  const [auditAlgorithm, setAuditAlgorithm] = useState('algoritmo1');
   const [auditTopK, setAuditTopK] = useState(5);
   const [auditUseAI, setAuditUseAI] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
@@ -151,7 +145,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const resetAllStates = () => {
     setSearchText('');
     setResults([]);
-    setAlgorithm('algoritmo1');
     setTopK(5);
     setUseAI(false);
     setAiAnalysis(null);
@@ -159,7 +152,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
     setCSVData(null);
     setFileName('');
-    setAuditAlgorithm('algoritmo1');
     setAuditTopK(5);
     setAuditUseAI(false);
     setIsProcessing(false);
@@ -226,7 +218,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     const savedSearchText = sessionStorage.getItem('session_searchText');
     const savedResults = sessionStorage.getItem('session_results');
-    const savedAlgorithm = sessionStorage.getItem('session_algorithm');
     const savedTopK = sessionStorage.getItem('session_topK');
     const savedUseAI = sessionStorage.getItem('session_useAI');
     const savedAiAnalysis = sessionStorage.getItem('session_aiAnalysis');
@@ -234,7 +225,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     const savedIsLoading = sessionStorage.getItem('session_isLoading');
     const savedCSVData = sessionStorage.getItem('session_csvData');
     const savedFileName = sessionStorage.getItem('session_fileName');
-    const savedAuditAlgorithm = sessionStorage.getItem('session_auditAlgorithm');
     const savedAuditTopK = sessionStorage.getItem('session_auditTopK');
     const savedAuditUseAI = sessionStorage.getItem('session_auditUseAI');
     const savedIsProcessing = sessionStorage.getItem('session_isProcessing');
@@ -246,7 +236,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
 
     if (savedSearchText) setSearchText(savedSearchText);
     if (savedResults) setResults(JSON.parse(savedResults));
-    if (savedAlgorithm) setAlgorithm(savedAlgorithm);
     if (savedTopK) setTopK(Number.parseInt(savedTopK));
     if (savedUseAI) setUseAI(savedUseAI === 'true');
     if (savedAiAnalysis) setAiAnalysis(JSON.parse(savedAiAnalysis));
@@ -254,7 +243,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     if (savedIsLoading) setIsLoading(savedIsLoading === 'true');
     if (savedCSVData) setCSVData(JSON.parse(savedCSVData));
     if (savedFileName) setFileName(savedFileName);
-    if (savedAuditAlgorithm) setAuditAlgorithm(savedAuditAlgorithm);
     if (savedAuditTopK) setAuditTopK(Number.parseInt(savedAuditTopK));
     if (savedAuditUseAI) setAuditUseAI(savedAuditUseAI === 'true');
     if (savedIsProcessing) setIsProcessing(savedIsProcessing === 'true');
@@ -284,10 +272,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     sessionStorage.setItem('session_results', JSON.stringify(results));
   }, [results]);
-
-  useEffect(() => {
-    sessionStorage.setItem('session_algorithm', algorithm);
-  }, [algorithm]);
 
   useEffect(() => {
     sessionStorage.setItem('session_topK', topK.toString());
@@ -320,10 +304,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     sessionStorage.setItem('session_fileName', fileName);
   }, [fileName]);
-
-  useEffect(() => {
-    sessionStorage.setItem('session_auditAlgorithm', auditAlgorithm);
-  }, [auditAlgorithm]);
 
   useEffect(() => {
     sessionStorage.setItem('session_auditTopK', auditTopK.toString());
@@ -369,7 +349,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
   const clearSession = () => {
     setSearchText('');
     setResults([]);
-    setAlgorithm('algoritmo1');
     setTopK(5);
     setUseAI(false);
     setAiAnalysis(null);
@@ -377,7 +356,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setIsLoading(false);
     setCSVData(null);
     setFileName('');
-    setAuditAlgorithm('algoritmo1');
     setAuditTopK(5);
     setAuditUseAI(false);
     setIsProcessing(false);
@@ -395,8 +373,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setSearchText,
     results,
     setResults,
-    algorithm,
-    setAlgorithm,
     topK,
     setTopK,
     useAI,
@@ -411,8 +387,6 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     setCSVData,
     fileName,
     setFileName,
-    auditAlgorithm,
-    setAuditAlgorithm,
     auditTopK,
     setAuditTopK,
     auditUseAI,

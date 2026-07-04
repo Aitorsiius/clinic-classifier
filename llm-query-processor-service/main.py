@@ -39,6 +39,28 @@ LOCATION = os.getenv("LOCATION", "europe-west1")
 if not PROJECT_ID or not LOCATION:
     raise ValueError("PROJECT_ID y LOCATION son requeridos")
 
+# ==========================================
+# PROMPTS (externalizados a prompts.json)
+# ==========================================
+# Las plantillas de prompt viven fuera del código para poder ajustarlas sin
+# tocar la lógica. En el JSON cada plantilla se guarda como una LISTA de líneas
+# (para que sea legible); aquí se unen con saltos de línea. Cada plantilla
+# contiene el marcador `{query}`, que se sustituye por el texto del usuario en
+# tiempo de ejecución (usamos str.replace en lugar de str.format para no tener
+# que escapar las llaves del JSON de ejemplo del prompt).
+PROMPTS_FILE = os.getenv(
+    "PROMPTS_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts.json")
+)
+with open(PROMPTS_FILE, encoding="utf-8") as _f:
+    _raw_prompts = json.load(_f)
+PROMPTS = {
+    key: ("\n".join(value) if isinstance(value, list) else value)
+    for key, value in _raw_prompts.items()
+}
+for _key in ("analyze", "correct", "ai_search"):
+    if _key not in PROMPTS:
+        raise ValueError(f"Falta la plantilla de prompt '{_key}' en {PROMPTS_FILE}")
+
 # En contenedores debe ser 0.0.0.0 para aceptar conexiones del resto de
 # servicios de la red interna de Docker; el acceso queda acotado por la red
 # bridge aislada y por los puertos publicados en docker-compose.
@@ -115,18 +137,7 @@ def call_gemini(prompt: str) -> str:
 
 def analyze_query(query: str) -> dict:
     """Analiza la consulta"""
-    prompt = f"""Analiza esta consulta médica y extrae SOLO términos clínicos en lenguaje natural.
-IMPORTANTE: 
-- Solo incluye síntomas, diagnósticos y hallazgos REALES mencionados o claramente implícitos
-- NO inventes síntomas adicionales ni des descripciones genéricas
-- NUNCA incluyas códigos, números o abreviaturas - usa SOLO lenguaje natural médico
-- search_keywords debe contener SOLO términos médicos simples en español que se buscarían naturalmente
-- Sé conciso y específico
-
-Devuelve SOLO JSON sin explicaciones:
-{{"primary_symptoms": [], "secondary_symptoms": [], "key_findings": [], "search_keywords": [], "clinical_context": ""}}
-
-Consulta: {query}"""
+    prompt = PROMPTS["analyze"].replace("{query}", query)
     response = call_gemini(prompt)
     try:
         json_start = response.find('{')
@@ -139,19 +150,7 @@ Consulta: {query}"""
 
 def correct_query(query: str) -> dict:
     """Corrige y normaliza la consulta: traduce acrónimos, normaliza términos"""
-    prompt = f"""Corrige y normaliza esta consulta médica usando lenguaje natural médico estándar.
-IMPORTANTE:
-- Reemplaza ALL las abreviaturas, acrónimos y siglas con términos completos en español
-- Traduce siglas como: HTA→Hipertensión arterial, DM→Diabetes mellitus, IAM→Infarto agudo de miocardio, etc.
-- Usa SOLO lenguaje natural - NUNCA incluyas códigos, números o referencias a clasificaciones
-- Ordena los términos de forma lógica (síntoma primario primero, complicaciones después)
-- NO inventes diagnósticos o síntomas adicionales
-- Mantén SOLO lo que el usuario menciona explícitamente
-
-Devuelve SOLO JSON:
-{{"corrected_query": "", "corrections": {{}}, "is_valid_medical_query": true}}
-
-Consulta: {query}"""
+    prompt = PROMPTS["correct"].replace("{query}", query)
     response = call_gemini(prompt)
     try:
         json_start = response.find('{')
@@ -167,77 +166,27 @@ def ai_search_assist(query: str) -> dict:
     """Primera fase del pipeline de búsqueda con IA.
 
     Con UNA sola llamada al modelo se obtiene:
-      - diagnostico: interpretación clínica en lenguaje natural de lo que el
+      - diagnosis: interpretación clínica en lenguaje natural de lo que el
         usuario ha introducido.
-      - consejos_mejora: información clínica AUSENTE que, de aportarse, afinaría
+      - improvement_tips: información clínica AUSENTE que, de aportarse, afinaría
         la clasificación (lateralidad, temporalidad del contacto, agudo/crónico,
         etiología, localización anatómica, etc.).
-      - enriched_query: texto técnico DENSO en el estilo de las descripciones
-        CIE-10-ES (descripción clínica + sinónimos + términos de inclusión) que
-        se enviará al bi-encoder y al cross-encoder ya existentes. NO incluye
-        códigos: solo terminología clínica estándar para mejorar el "match".
+      - enriched_query: ÚNICAMENTE el nombre canónico del diagnóstico en su forma
+        base (tal y como figura como TÍTULO en el catálogo CIE-10-ES), SIN sinónimos
+        ni términos descriptivos/anatómicos extra, que se enviará al bi-encoder y al
+        cross-encoder ya existentes. Cada palabra de más introduce ruido semántico y
+        atrae códigos de patologías erróneas; NO incluye códigos.
 
     El objetivo es cerrar la brecha semántica entre el lenguaje coloquial del
     usuario y el texto técnico-jerárquico indexado en la base vectorial. La IA
     se usa SOLO en esta fase; el re-ranking lo sigue haciendo el cross-encoder.
     """
-    prompt = f"""Eres un experto en codificación clínica CIE-10-ES. Tu tarea NO es asignar el
-código final, sino TRADUCIR y ENRIQUECER el texto del usuario para que un buscador
-semántico (embeddings + cross-encoder) encuentre los códigos correctos.
-
-Las descripciones de la base de datos siguen un estilo técnico y jerárquico, por
-ejemplo: "ENFERMEDADES INFECCIOSAS INTESTINALES Cólera debido a Vibrio cholerae 01".
-Los códigos muy parecidos se diferencian por EJES DE DESEMPATE: localización
-anatómica, lateralidad (derecho/izquierdo/bilateral), temporalidad del contacto
-(inicial/sucesivo/secuela), agudo/crónico, etiología, severidad y presencia o
-ausencia de complicaciones.
-
-INSTRUCCIONES:
-1. "diagnostico": redacta una frase clínica técnica, neutra y precisa de lo que
-   presenta el paciente. NO inventes datos que el usuario no haya dado; si algo es
-   ambiguo, no lo afirmes.
-2. "enriched_query": un párrafo DENSO que imite el estilo de las descripciones
-   CIE-10-ES (descripción clínica + sinónimos médicos + términos de inclusión).
-   Debe sonar a manual de codificación, NO a lenguaje coloquial. Usa terminología
-   estándar en español. NUNCA incluyas códigos, números de clasificación ni siglas.
-3. "consejos_mejora": revisa la consulta y detecta qué INFORMACIÓN CLAVE falta para
-   elegir un código único. Fíjate específicamente en estos ejes (menciona solo los
-   que NO estén ya especificados por el usuario):
-   - Localización anatómica exacta (hueso/órgano y región: proximal, distal, lóbulo,
-     segmento, cara, etc.).
-   - Lateralidad: derecho, izquierdo o bilateral.
-   - Temporalidad del contacto asistencial: contacto inicial, contacto sucesivo o
-     secuela (clave en traumatismos; cambia el último carácter del código).
-   - Evolución: agudo, crónico o reagudizado; tiempo de evolución.
-   - Etiología o causa: traumática, infecciosa (agente concreto), tumoral, isquémica,
-     idiopática, medicamentosa, etc.
-   - Severidad o grado: leve/moderado/grave, estadio, % afectado, escala clínica.
-   - Complicaciones o manifestaciones asociadas (con/sin complicación específica).
-   - Contexto fisiológico cuando aplique: trimestre de embarazo, edad gestacional,
-     tipo de parto, etc.
-   Para cada dato ausente RELEVANTE, redacta UN consejo accionable y breve dirigido
-   al usuario ("Indica…", "Especifica…", "Confirma…"). Ordena los consejos por
-   impacto en el código (lateralidad y temporalidad primero). Como máximo 5 consejos.
-   Si la consulta ya define todos los ejes relevantes, devuelve una lista vacía.
-4. "is_valid_medical_query": false si el texto no es una consulta clínica
-   interpretable (en ese caso deja "diagnostico" y "enriched_query" vacíos y
-   "consejos_mejora" vacío).
-5. NO devuelvas códigos CIE-10. Responde EXCLUSIVAMENTE con el JSON, sin texto extra.
-
-Formato de salida (JSON estricto):
-{{"diagnostico": "", "enriched_query": "", "consejos_mejora": [], "is_valid_medical_query": true}}
-
-EJEMPLO (referencia de estilo y nivel de detalle):
-Consulta del usuario: "fractura muñeca izquierda, primera vez que viene"
-Respuesta:
-{{"diagnostico": "Fractura cerrada del extremo distal del radio izquierdo, primer contacto asistencial.", "enriched_query": "Fractura de la extremidad inferior del radio izquierdo, fractura distal de antebrazo, fractura de la muñeca, lesión traumática ósea de la región distal del radio, contacto inicial para fractura cerrada.", "consejos_mejora": ["Confirma el tipo de contacto: inicial, sucesivo o secuela (cambia el código).", "Indica si la fractura es abierta o cerrada.", "Especifica si existe desplazamiento o conminución de los fragmentos.", "Detalla el mecanismo de la lesión (caída, traumatismo directo, etc.)."], "is_valid_medical_query": true}}
-
-Consulta del usuario: {query}"""
+    prompt = PROMPTS["ai_search"].replace("{query}", query)
     response = call_gemini(prompt)
     fallback = {
-        "diagnostico": "",
+        "diagnosis": "",
         "enriched_query": "",
-        "consejos_mejora": [],
+        "improvement_tips": [],
         "is_valid_medical_query": True,
     }
     try:
@@ -246,15 +195,15 @@ Consulta del usuario: {query}"""
         if json_start != -1 and json_end > json_start:
             data = json.loads(response[json_start:json_end])
             # Normalizar tipos por robustez frente a respuestas inesperadas.
-            consejos = data.get("consejos_mejora", [])
+            consejos = data.get("improvement_tips", [])
             if isinstance(consejos, str):
                 consejos = [consejos] if consejos.strip() else []
             elif not isinstance(consejos, list):
                 consejos = []
             return {
-                "diagnostico": str(data.get("diagnostico", "") or "").strip(),
+                "diagnosis": str(data.get("diagnosis", "") or "").strip(),
                 "enriched_query": str(data.get("enriched_query", "") or "").strip(),
-                "consejos_mejora": [str(c).strip() for c in consejos if str(c).strip()],
+                "improvement_tips": [str(c).strip() for c in consejos if str(c).strip()],
                 "is_valid_medical_query": bool(data.get("is_valid_medical_query", True)),
             }
         return fallback
@@ -300,7 +249,7 @@ async def process(request: QueryRequest):
 async def ai_search(request: QueryRequest):
     """Primera fase del pipeline de búsqueda con IA (una sola llamada al LLM).
 
-    Devuelve el bloque del asistente (diagnostico + consejos_mejora) y el
+    Devuelve el bloque del asistente (diagnosis + improvement_tips) y el
     enriched_query que alimentará al bi-encoder y al cross-encoder existentes.
     """
     start_time = time.time()
@@ -308,9 +257,9 @@ async def ai_search(request: QueryRequest):
     processing_time_ms = (time.time() - start_time) * 1000
     return {
         "original_query": request.query,
-        "diagnostico": assist.get("diagnostico", ""),
+        "diagnosis": assist.get("diagnosis", ""),
         "enriched_query": assist.get("enriched_query", ""),
-        "consejos_mejora": assist.get("consejos_mejora", []),
+        "improvement_tips": assist.get("improvement_tips", []),
         "is_valid_medical_query": assist.get("is_valid_medical_query", True),
         "processing_time_ms": processing_time_ms,
     }

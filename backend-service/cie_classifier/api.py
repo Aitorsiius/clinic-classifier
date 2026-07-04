@@ -23,7 +23,6 @@ from fastapi import BackgroundTasks
 class SearchRequest(BaseModel):
     query: str
     top_k: Optional[int] = 5
-    algorithm: Optional[str] = "hybrid"
     # Activa el pipeline de búsqueda con IA: el backend pide a la primera fase
     # (LLM) un texto enriquecido y se lo pasa al bi-encoder + cross-encoder.
     use_ai: bool = False
@@ -159,8 +158,8 @@ async def _handle_ai_enrichment(request: SearchRequest) -> dict:
         result["enriched_query"] = candidate
 
     result["assistant_block"] = {
-        "diagnostico": ai_data.get("diagnostico", ""),
-        "consejos_mejora": ai_data.get("consejos_mejora", []),
+        "diagnosis": ai_data.get("diagnosis", ""),
+        "improvement_tips": ai_data.get("improvement_tips", []),
         "enriched_query": ai_data.get("enriched_query", ""),
         "is_valid_medical_query": ai_data.get("is_valid_medical_query", True),
         "processing_time_ms": ai_data.get("processing_time_ms"),
@@ -207,17 +206,20 @@ async def _safe_async_log(
 async def enrich_query_with_ai(query: str) -> Optional[dict]:
     """Primera fase del pipeline de búsqueda con IA.
 
-    Pide al procesador LLM el bloque del asistente (diagnostico + consejos) y el
+    Pide al procesador LLM el bloque del asistente (diagnosis + consejos) y el
     texto enriquecido que después se usa para recuperar y re-rankear. Si el LLM
     no está disponible o falla, devuelve None y la búsqueda continúa en modo
     normal (degradación elegante, nunca rompe la clasificación).
 
     Returns:
-        dict con las claves 'diagnostico', 'consejos_mejora', 'enriched_query',
+        dict con las claves 'diagnosis', 'improvement_tips', 'enriched_query',
         'is_valid_medical_query' o None si no se pudo enriquecer.
     """
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # 45 s para el enriquecimiento con IA (Gemini puede ser lento). Menor que el
+        # timeout del gateway hacia el backend (60 s); si se supera, se hace fallback
+        # a la búsqueda sin IA con la consulta original.
+        async with httpx.AsyncClient(timeout=45.0) as client:
             response = await client.post(
                 f"{LLM_QUERY_PROCESSOR_URL}/ai-search",
                 json={"query": query},

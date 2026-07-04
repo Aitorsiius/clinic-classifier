@@ -22,17 +22,16 @@ class GatewaySearchEngine:
     def __init__(self, gateway_url: str):
         self.gateway_url = gateway_url
     
-    def search(self, query: str, top_k: int = 5, algorithm: str = "hybrid", use_ai: bool = False) -> List[Dict]:
+    def search(self, query: str, top_k: int = 5, use_ai: bool = False) -> List[Dict]:
         """
         Busca en el backend a través del gateway
-        
+
         Args:
             query: Texto a buscar
             top_k: Número de resultados
-            algorithm: Algoritmo a usar
             use_ai: Si es True, la búsqueda usa el pipeline de IA (primera fase
                 LLM que enriquece la consulta + bi-encoder + cross-encoder).
-            
+
         Returns:
             Lista de resultados de búsqueda
         """
@@ -40,7 +39,7 @@ class GatewaySearchEngine:
             client = httpx.Client(timeout=60 if use_ai else 30)
             response = client.post(
                 f"{self.gateway_url}/api/search",
-                json={"query": query, "top_k": top_k, "algorithm": algorithm, "use_ai": use_ai}
+                json={"query": query, "top_k": top_k, "use_ai": use_ai}
             )
             client.close()
             
@@ -144,21 +143,20 @@ class CodeAuditor:
         self.search_engine = search_engine
         self.audit_history: Dict[str, AuditReport] = {}
     
-    def audit_record(self, record: DiagnosisRecord, top_k: int = 5, algorithm: str = "hybrid", use_ai: bool = False) -> AuditFinding:
+    def audit_record(self, record: DiagnosisRecord, top_k: int = 5, use_ai: bool = False) -> AuditFinding:
         """
         Audita un registro individual de diagnóstico
-        
+
         Args:
             record: Registro de diagnóstico a auditar
             top_k: Número de resultados a considerar
-            algorithm: Algoritmo de búsqueda a utilizar
             use_ai: Si es True, la búsqueda usa el pipeline de IA.
-            
+
         Returns:
             AuditFinding con el resultado de auditoría
         """
         # 1. Realizar búsqueda del diagnóstico
-        search_results = self.search_engine.search(record.diagnosis_text, top_k=top_k, algorithm=algorithm, use_ai=use_ai)
+        search_results = self.search_engine.search(record.diagnosis_text, top_k=top_k, use_ai=use_ai)
         
         if not search_results:
             # No se encontraron resultados - se considera como no coincidencia
@@ -325,21 +323,20 @@ class CodeAuditor:
         
         return True
     
-    def audit_batch(self, records: List[DiagnosisRecord], algorithm: str = "algoritmo1", top_k: int = 5, progress_callback=None, use_ai: bool = False) -> AuditReport:
+    def audit_batch(self, records: List[DiagnosisRecord], top_k: int = 5, progress_callback=None, use_ai: bool = False) -> AuditReport:
         """
         Audita un lote de registros de diagnósticos
-        
+
         Args:
             records: Lista de registros a auditar
-            algorithm: Algoritmo de búsqueda a utilizar (algoritmo1, algoritmo2, etc.)
             top_k: Número de resultados a considerar por búsqueda
             progress_callback: Función callback(current, total) para reportar progreso
             use_ai: Si es True, cada búsqueda usa el pipeline de IA.
-            
+
         Returns:
             AuditReport con hallazgos agregados
         """
-        audit_id = f"reporte-auditoria-{algorithm}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+        audit_id = f"reporte-auditoria_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
         findings: List[AuditFinding] = []
 
         # Cronómetro del lote completo (incluye, en modo IA, el enriquecimiento
@@ -348,7 +345,7 @@ class CodeAuditor:
 
         # Procesar cada registro
         for idx, record in enumerate(records):
-            finding = self.audit_record(record, top_k=top_k, algorithm=algorithm, use_ai=use_ai)
+            finding = self.audit_record(record, top_k=top_k, use_ai=use_ai)
             findings.append(finding)
             
             # Pequeño delay para simular procesamiento realista (50-100ms por registro)

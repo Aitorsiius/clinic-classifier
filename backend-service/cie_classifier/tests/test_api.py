@@ -128,8 +128,8 @@ def test_search_with_ai(monkeypatch, client_with_engine):
     async def fake_enrich(query):
         return {
             "enriched_query": "infeccion intestinal por vibrio",
-            "diagnostico": "Colera",
-            "consejos_mejora": ["Indica el agente"],
+            "diagnosis": "Colera",
+            "improvement_tips": ["Indica el agente"],
             "is_valid_medical_query": True,
             "processing_time_ms": 12.0,
         }
@@ -138,7 +138,7 @@ def test_search_with_ai(monkeypatch, client_with_engine):
     resp = client.post("/search", json={"query": "diarrea", "use_ai": True})
     body = resp.json()
     assert body["used_ai"] is True
-    assert body["assistant"]["diagnostico"] == "Colera"
+    assert body["assistant"]["diagnosis"] == "Colera"
     # El texto enriquecido se pasa al motor.
     assert engine.calls[0][2] == "infeccion intestinal por vibrio"
 

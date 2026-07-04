@@ -198,7 +198,7 @@ def test_update_ai_analysis_success(cols, client):
     })
     resp = client.patch("/searches/update-ai", json={
         "session_id": "s1", "query": "tos",
-        "ai_analysis": {"diagnostico": "x", "consejos_mejora": ["y"]},
+        "ai_analysis": {"diagnosis": "x", "improvement_tips": ["y"]},
     })
     assert resp.status_code == 200
     assert resp.json()["status"] == "success"

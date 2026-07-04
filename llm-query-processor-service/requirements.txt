@@ -11,4 +11,4 @@ python-dotenv==1.2.2
 
 # Google Cloud - Vertex AI
 google-cloud-aiplatform==1.133.0
-google-auth==2.26.0
+google-auth==2.47.0

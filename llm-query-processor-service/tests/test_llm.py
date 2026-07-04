@@ -103,34 +103,34 @@ def test_correct_query_fallback_keeps_original(monkeypatch):
 # ----------------------------------------------------------------------------
 def test_ai_search_assist_parses_and_normalizes(monkeypatch):
     raw = (
-        '{"diagnostico": " Neumonia ", "enriched_query": " infeccion pulmonar ", '
-        '"consejos_mejora": ["Indica lateralidad", "  ", 123], '
+        '{"diagnosis": " Neumonia ", "enriched_query": " infeccion pulmonar ", '
+        '"improvement_tips": ["Indica lateralidad", "  ", 123], '
         '"is_valid_medical_query": true}'
     )
     monkeypatch.setattr(main, "call_gemini", lambda prompt: raw)
     result = main.ai_search_assist("tos con fiebre")
-    assert result["diagnostico"] == "Neumonia"
+    assert result["diagnosis"] == "Neumonia"
     assert result["enriched_query"] == "infeccion pulmonar"
-    assert result["consejos_mejora"] == ["Indica lateralidad", "123"]
+    assert result["improvement_tips"] == ["Indica lateralidad", "123"]
     assert result["is_valid_medical_query"] is True
 
 
 def test_ai_search_assist_consejos_as_string(monkeypatch):
     raw = (
-        '{"diagnostico": "x", "enriched_query": "y", '
-        '"consejos_mejora": "un consejo", "is_valid_medical_query": true}'
+        '{"diagnosis": "x", "enriched_query": "y", '
+        '"improvement_tips": "un consejo", "is_valid_medical_query": true}'
     )
     monkeypatch.setattr(main, "call_gemini", lambda prompt: raw)
     result = main.ai_search_assist("q")
-    assert result["consejos_mejora"] == ["un consejo"]
+    assert result["improvement_tips"] == ["un consejo"]
 
 
 def test_ai_search_assist_fallback_on_garbage(monkeypatch):
     monkeypatch.setattr(main, "call_gemini", lambda prompt: "sin json")
     result = main.ai_search_assist("q")
     assert result == {
-        "diagnostico": "",
+        "diagnosis": "",
         "enriched_query": "",
-        "consejos_mejora": [],
+        "improvement_tips": [],
         "is_valid_medical_query": True,
     }

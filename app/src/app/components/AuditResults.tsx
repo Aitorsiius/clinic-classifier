@@ -13,7 +13,7 @@ import {
   SelectValue,
 } from './ui/select';
 import { Download, FileJson, TrendingUp, AlertTriangle, CheckCircle2, Search, X } from 'lucide-react';
-import { formatDuration } from '../utils/format';
+import { formatDuration, cleanDiagnosisText } from '../utils/format';
 
 export interface AuditResult {
   patient_id: string;
@@ -310,7 +310,7 @@ export function AuditResults({ report }: AuditResultsProps) {
                       className="border-b hover:bg-gray-50 transition-colors"
                     >
                       <td className="px-4 py-3 text-gray-900 font-medium text-sm">{finding.patient_id}</td>
-                      <td className="px-4 py-3 text-gray-900 truncate text-sm" title={finding.diagnosis_text}>{finding.diagnosis_text}</td>
+                      <td className="px-4 py-3 text-gray-900 truncate text-sm" title={cleanDiagnosisText(finding.diagnosis_text)}>{cleanDiagnosisText(finding.diagnosis_text)}</td>
                       <td className="px-4 py-3 font-mono font-semibold text-gray-800">
                         {finding.assigned_code || '—'}
                       </td>
@@ -349,7 +349,7 @@ export function AuditResults({ report }: AuditResultsProps) {
                         {/* Encabezado: Diagnóstico y tipo */}
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1">
-                            <p className="font-semibold text-gray-900 text-base">{finding.diagnosis_text}</p>
+                            <p className="font-semibold text-gray-900 text-base">{cleanDiagnosisText(finding.diagnosis_text)}</p>
                             <p className="text-sm text-gray-500 mt-1">ID Paciente: <span className="font-mono font-medium">{finding.patient_id}</span></p>
                           </div>
                           <Badge className={DiscrepancyTypeColors[finding.discrepancy_type]} variant="default">

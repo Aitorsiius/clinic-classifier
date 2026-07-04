@@ -1,4 +1,4 @@
-"""Tests de los helpers asíncronos y del ``/health`` de ``api-gateway-service``.
+"""Tests de los helpers asíncronos y del ``/health`` de ``api-gateway``.
 
 ``log_search`` y ``log_audit`` registran en el log-service vía httpx de forma no
 bloqueante; aquí se simula httpx para cubrir tanto el camino correcto como la

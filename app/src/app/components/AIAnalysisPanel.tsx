@@ -6,15 +6,15 @@ import { motion, AnimatePresence } from 'framer-motion';
  * Bloque del asistente inteligente devuelto por la primera fase del pipeline
  * de IA. Es independiente de la lista de resultados de clasificación.
  *
- * - `diagnostico`: interpretación clínica en lenguaje natural de lo que el
+ * - `diagnosis`: interpretación clínica en lenguaje natural de lo que el
  *   usuario ha introducido.
- * - `consejos_mejora`: información clínica AUSENTE que, de aportarse, afinaría
+ * - `improvement_tips`: información clínica AUSENTE que, de aportarse, afinaría
  *   la clasificación (lateralidad, temporalidad del contacto, etc.).
  * - `enriched_query`: texto técnico que se envió al buscador (informativo).
  */
 export interface AIAssistant {
-  diagnostico: string;
-  consejos_mejora: string[];
+  diagnosis: string;
+  improvement_tips: string[];
   enriched_query?: string;
   is_valid_medical_query?: boolean;
   processing_time_ms?: number;
@@ -60,8 +60,8 @@ export function AIAnalysisPanel({ data, shouldCollapse = false }: AIAnalysisPane
   };
 
   // El diagnóstico está vacío o la consulta no es clínicamente interpretable.
-  const hasDiagnosis = Boolean(data.diagnostico && data.diagnostico.trim());
-  const tips = Array.isArray(data.consejos_mejora) ? data.consejos_mejora : [];
+  const hasDiagnosis = Boolean(data.diagnosis && data.diagnosis.trim());
+  const tips = Array.isArray(data.improvement_tips) ? data.improvement_tips : [];
   const isInvalid = data.is_valid_medical_query === false || !hasDiagnosis;
 
   return (
@@ -124,11 +124,11 @@ export function AIAnalysisPanel({ data, shouldCollapse = false }: AIAnalysisPane
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleCopy(data.diagnostico, 'diagnostico');
+                          handleCopy(data.diagnosis, 'diagnosis');
                         }}
                         className="flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded bg-purple-100 text-purple-700 hover:bg-purple-200 transition-colors"
                       >
-                        {copiedText === 'diagnostico' ? (
+                        {copiedText === 'diagnosis' ? (
                           <>
                             <Check className="w-4 h-4" />
                             Copiado
@@ -142,7 +142,7 @@ export function AIAnalysisPanel({ data, shouldCollapse = false }: AIAnalysisPane
                       </button>
                     </div>
                     <div className="bg-white rounded-lg p-3 border border-purple-200">
-                      <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{data.diagnostico}</p>
+                      <p className="text-sm text-slate-700 whitespace-pre-wrap break-words">{data.diagnosis}</p>
                     </div>
                   </div>
 

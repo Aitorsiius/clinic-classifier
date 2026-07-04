@@ -31,3 +31,27 @@ export function formatElapsedSeconds(ms: number | null | undefined): string {
   }
   return `${(ms / 1000).toFixed(1)}s`;
 }
+
+/**
+ * Limpia un texto para mostrarlo sin las comillas que arrastran los campos CSV.
+ *
+ * Elimina las comillas (dobles o simples) que envuelven el texto y convierte las
+ * comillas dobles escapadas ("") en una sola. Pensado para las descripciones de
+ * diagnóstico, que en los CSV vienen entrecomilladas; así la UI nunca las muestra.
+ */
+export function cleanDiagnosisText(text: string | null | undefined): string {
+  if (!text) {
+    return '';
+  }
+  let cleaned = text.trim();
+  // Quitar una pareja de comillas envolventes (dobles o simples).
+  if (cleaned.length >= 2) {
+    const first = cleaned[0];
+    const last = cleaned[cleaned.length - 1];
+    if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
+      cleaned = cleaned.slice(1, -1);
+    }
+  }
+  // Comillas dobles escapadas del formato CSV ("") -> comilla simple.
+  return cleaned.replace(/""/g, '"').trim();
+}

@@ -21,8 +21,8 @@ class FakeSearchEngine:
         self._results = results
         self.calls = []
 
-    def search(self, query, top_k=5, algorithm="hybrid", use_ai=False):
-        self.calls.append((query, top_k, algorithm, use_ai))
+    def search(self, query, top_k=5, use_ai=False):
+        self.calls.append((query, top_k, use_ai))
         return self._results
 
 

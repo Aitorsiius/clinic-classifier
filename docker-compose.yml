@@ -11,8 +11,6 @@ services:
       dockerfile: Dockerfile
     image: cie10-auth:latest
     container_name: cie10-auth
-    ports:
-      - "8004:8004"
     environment:
       - JWT_SECRET=${JWT_SECRET}
       - JWT_ALGORITHM=${JWT_ALGORITHM}
@@ -22,6 +20,11 @@ services:
       - LOG_SERVICE_URL=http://log-service:8006
     networks:
       - clinic-classifier-network
+    # DNS públicos: el resolver embebido de Docker Desktop falla de forma
+    # intermitente al resolver los nodos SRV de MongoDB Atlas.
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8004/health || exit 1"]
@@ -37,8 +40,6 @@ services:
       dockerfile: Dockerfile
     image: cie10-audit:latest
     container_name: cie10-audit
-    ports:
-      - "8005:8005"
     environment:
       - AUDIT_SERVICE_PORT=8005
       - API_GATEWAY_URL=http://api-gateway:3000
@@ -66,8 +67,6 @@ services:
       dockerfile: Dockerfile
     image: cie10-logs:latest
     container_name: cie10-logs
-    ports:
-      - "8006:8006"
     environment:
       - LOG_SERVICE_PORT=8006
       - MONGO_CONNECTION=${MONGO_CONNECTION}
@@ -76,6 +75,9 @@ services:
         condition: service_healthy
     networks:
       - clinic-classifier-network
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8006/health || exit 1"]
@@ -91,8 +93,6 @@ services:
       dockerfile: Dockerfile
     image: cie10-history:latest
     container_name: cie10-history
-    ports:
-      - "8007:8007"
     environment:
       - HISTORY_SERVICE_PORT=8007
       - MONGO_CONNECTION=${MONGO_CONNECTION}
@@ -103,6 +103,9 @@ services:
         condition: service_healthy
     networks:
       - clinic-classifier-network
+    dns:
+      - 8.8.8.8
+      - 1.1.1.1
     restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8007/health || exit 1"]
@@ -122,8 +125,6 @@ services:
       dockerfile: Dockerfile
     image: cie10-llm-processor:latest
     container_name: cie10-llm-processor
-    ports:
-      - "8003:8003"
     environment:
       - LOCATION=${LOCATION}
     volumes:
@@ -142,8 +143,6 @@ services:
   embeddings:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
     container_name: cie10-embeddings
-    ports:
-      - "8002:8002"
     volumes:
       - embeddings-data:/data
     command: --model-id intfloat/multilingual-e5-base --port 8002
@@ -161,8 +160,6 @@ services:
   reranker:
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
     container_name: cie10-reranker
-    ports:
-      - "8001:8001"
     environment:
       - HF_HOME=/root/.cache/huggingface
     volumes:
@@ -185,13 +182,13 @@ services:
       dockerfile: cie_classifier/Dockerfile
     image: cie10-backend:latest
     container_name: cie10-backend
-    ports:
-      - "8000:8000"
     environment:
       - EMBEDDING_URL=http://embeddings:8002/embed
       - RERANKER_URL=http://reranker:8001/rerank
       - LLM_QUERY_PROCESSOR_URL=http://llm-query-processor:8003
       - LOG_SERVICE_URL=http://log-service:8006
+      # Candidatos del bi-encoder que pasan al re-ranker (embudo del pipeline).
+      - RETRIEVAL_CANDIDATES=80
     volumes:
       - ./backend-service/cie10_qdrant:/app/../cie10_qdrant
     depends_on:
@@ -212,7 +209,7 @@ services:
   # API Gateway
   api-gateway:
     build:
-      context: ./api-gateway-service
+      context: ./api-gateway
       dockerfile: Dockerfile
     image: cie10-gateway:latest
     container_name: cie10-gateway

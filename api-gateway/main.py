@@ -118,7 +118,6 @@ class AuditRecordRequest(BaseModel):
 class AuditBatchRequest(BaseModel):
     records: List[AuditRecordRequest]
     top_k: Optional[int] = 5
-    algorithm: Optional[str] = "algoritmo1"
     # Ejecuta la auditoría a través del pipeline de búsqueda con IA.
     use_ai: bool = False
 
@@ -216,7 +215,6 @@ async def log_audit(
     session_id: str,
     user_id: str,
     records_count: int,
-    algorithm: Optional[str] = None,
     top_k: Optional[int] = None,
     use_ai: bool = False,
     total_time_ms: Optional[float] = None,
@@ -240,7 +238,6 @@ async def log_audit(
                     "session_id": session_id,
                     "user_id": user_id,
                     "records_count": records_count,
-                    "algorithm": algorithm,
                     "top_k": top_k,
                     "use_ai": use_ai,
                     "total_time_ms": total_time_ms,
@@ -295,7 +292,6 @@ async def _log_successful_audit(
         "total_mismatch": audit_result.get("total_mismatch"),
         "conformity_percentage": audit_result.get("conformity_percentage"),
         "top_k": audit_result.get("top_k"),
-        "algorithm": request.algorithm or "algoritmo1",
         "use_ai": request.use_ai,
         "total_time_ms": audit_result.get("total_time_ms"),
         "findings": audit_result.get("findings", [])
@@ -305,7 +301,6 @@ async def _log_successful_audit(
         session_id=session_id,
         user_id=user_id,
         records_count=len(request.records),
-        algorithm=request.algorithm or "algoritmo1",
         top_k=request.top_k or 5,
         use_ai=request.use_ai,
         total_time_ms=audit_result.get("total_time_ms"),
@@ -623,7 +618,6 @@ async def audit_batch(
                 json={
                     "records": [r.model_dump() for r in request.records],
                     "top_k": request.top_k or 5,
-                    "algorithm": request.algorithm or "algoritmo1",
                     "use_ai": request.use_ai
                 },
                 headers={"Authorization": auth_header}
@@ -645,7 +639,6 @@ async def audit_batch(
                             session_id=session_id,
                             user_id=user_id,
                             records_count=len(request.records),
-                            algorithm=request.algorithm,
                             top_k=request.top_k,
                             use_ai=request.use_ai,
                             total_time_ms=result.get("total_time_ms"),
@@ -654,7 +647,6 @@ async def audit_batch(
                             details={
                                 "records_count": len(request.records),
                                 "top_k": request.top_k,
-                                "algorithm": request.algorithm,
                                 "use_ai": request.use_ai,
                                 "total_time_ms": result.get("total_time_ms")
                             }
@@ -700,7 +692,6 @@ async def audit_batch_stream(
     payload = {
         "records": [r.model_dump() for r in request.records],
         "top_k": request.top_k or 5,
-        "algorithm": request.algorithm or "algoritmo1",
         "use_ai": request.use_ai
     }
     
@@ -741,7 +732,10 @@ async def search_diagnosis(
         if not user_id:
             user_id = req.headers.get("x-user-id")
         
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        # 60 s: la fase de IA del backend puede ser lenta por la llamada al LLM.
+        # Debe ser MAYOR que el timeout interno backend->LLM (45 s) para que el
+        # error que aflore sea el específico de la fase y no el genérico del gateway.
+        async with httpx.AsyncClient(timeout=60.0) as client:
             response = await client.post(
                 f"{BACKEND_URL}/search",
                 json=request.model_dump(),

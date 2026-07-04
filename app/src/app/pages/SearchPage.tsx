@@ -32,8 +32,8 @@ interface SearchResponse {
   search_time_ms?: number;
   // Bloque del asistente inteligente (solo en modo IA).
   assistant?: {
-    diagnostico: string;
-    consejos_mejora: string[];
+    diagnosis: string;
+    improvement_tips: string[];
     enriched_query?: string;
     is_valid_medical_query?: boolean;
     processing_time_ms?: number;
@@ -59,8 +59,6 @@ export default function SearchPage() {
   const setSearchText = session.setSearchText;
   const results = session.results;
   const setResults = session.setResults;
-  const algorithm = session.algorithm;
-  const setAlgorithm = session.setAlgorithm;
   const topK = session.topK;
   const setTopK = session.setTopK;
   const useAI = session.useAI;
@@ -94,7 +92,6 @@ export default function SearchPage() {
         body: JSON.stringify({
           query: searchText,
           top_k: topK,
-          algorithm: algorithm,
           use_ai: useAI
         })
       });
@@ -161,8 +158,8 @@ export default function SearchPage() {
     if (search.used_ai_assistant && search.ai_suggestions) {
       setUseAI(true);
       setAiAnalysis({
-        diagnostico: search.ai_suggestions.diagnostico || '',
-        consejos_mejora: search.ai_suggestions.consejos_mejora || [],
+        diagnosis: search.ai_suggestions.diagnosis || '',
+        improvement_tips: search.ai_suggestions.improvement_tips || [],
         enriched_query: search.ai_suggestions.enriched_query,
         is_valid_medical_query: search.ai_suggestions.is_valid_medical_query,
         processing_time_ms: search.ai_suggestions.processing_time_ms,
@@ -203,8 +200,6 @@ export default function SearchPage() {
         )}
 
         <Filters
-          algorithm={algorithm}
-          setAlgorithm={setAlgorithm}
           topK={topK}
           setTopK={setTopK}
           isLoading={isLoading}

@@ -61,12 +61,12 @@ def test_ai_search_endpoint(monkeypatch):
     monkeypatch.setattr(
         main,
         "call_gemini",
-        lambda prompt: '{"diagnostico": "Neumonia", "enriched_query": "infeccion pulmonar", '
-        '"consejos_mejora": ["Indica lateralidad"], "is_valid_medical_query": true}',
+        lambda prompt: '{"diagnosis": "Neumonia", "enriched_query": "infeccion pulmonar", '
+        '"improvement_tips": ["Indica lateralidad"], "is_valid_medical_query": true}',
     )
     resp = client.post("/ai-search", json={"query": "tos con fiebre"})
     body = resp.json()
-    assert body["diagnostico"] == "Neumonia"
+    assert body["diagnosis"] == "Neumonia"
     assert body["enriched_query"] == "infeccion pulmonar"
-    assert body["consejos_mejora"] == ["Indica lateralidad"]
+    assert body["improvement_tips"] == ["Indica lateralidad"]
     assert "processing_time_ms" in body

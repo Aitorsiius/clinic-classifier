@@ -28,7 +28,7 @@ jobs:
           for req in \
             audit-service/requirements.txt \
             auth-service/requirements.txt \
-            api-gateway-service/requirements.txt \
+            api-gateway/requirements.txt \
             history-service/requirements.txt \
             log-service/requirements.txt \
             llm-query-processor-service/requirements.txt \

@@ -11,8 +11,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt .
 RUN pip install --no-cache-dir --only-binary :all: -r requirements.txt
 
-# Copiar aplicación y credenciales
+# Copiar aplicación, prompts y preparar credenciales
 COPY main.py .
+COPY prompts.json .
 RUN mkdir -p /app/credentials
 
 # Exponer puerto

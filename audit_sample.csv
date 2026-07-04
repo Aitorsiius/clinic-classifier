@@ -1,21 +1,21 @@
 diagnosis_text,assigned_code,patient_id
-Paciente que acude tras traumatismo craneoencefálico con périda de consciencia en el contexto de intoxicación etílica tras caída. Además refiere cefalea y pérdida de control de esfínteres (orina),S06.1X9D,PAT001
-Infarto Agudo de Miocardio anterior,I21.02,PAT002
-Hipertensión Arterial esencial,I10,PAT003
-Neumonía adquirida en comunidad,J18.9,PAT004
-Insuficiencia cardíaca congestiva,I50.9,PAT005
-Enfermedad Pulmonar Obstructiva Crónica,J44.9,PAT006
-Accidente cerebrovascular isquémico,I63.9,PAT007
-Asma crónica,J45.9,PAT008
-Enfermedad renal crónica estadio 3,N18.3,PAT009
-Síndrome de piernas inquietas,G25.81,PAT010
-Gastritis aguda erosiva,K29.0,PAT011
-Apendicitis aguda no complicada,K35.80,PAT012
-Cálculo biliar sin colecistitis,K80.9,PAT013
-Hipotiroidismo primario,E03.9,PAT014
-Síndrome depresivo recurrente,F33.9,PAT015
-Osteoartrosis primaria de cadera,M16.0,PAT016
-Fimosis del prepucio,N47.0,PAT017
-Conjuntivitis alérgica,H10.45,PAT018
-Otitis media aguda,H66.0,PAT019
-Dispepsia funcional,K30,PAT020
+"Paciente que refiere mucha sed, necesidad de orinar con frecuencia y pérdida de peso en las últimas semanas, junto con cansancio y visión borrosa",E11.9,PAT001
+"Paciente con fiebre de varias semanas, sudores nocturnos, pérdida de peso importante, diarrea persistente e infecciones de boca repetidas",B20,PAT002
+"Paciente con dolor e hinchazón en las articulaciones de ambas manos y rigidez por las mañanas de más de una hora",M05.749,PAT003
+"Paciente con dolor de cabeza en la nuca por las mañanas y tensión arterial alta en varias mediciones",I10,PAT004
+"Paciente con dificultad para respirar, pitidos en el pecho y tos seca nocturna, que empeoran con el ejercicio y el polen",J45.20,PAT005
+"Paciente con cansancio, sensación de frío, aumento de peso, piel seca, estreñimiento y caída del cabello",E03.9,PAT006
+"Paciente con cansancio, palidez, mareos al levantarse y falta de aire al hacer esfuerzos",D64.9,PAT007
+"Paciente con estado de ánimo bajo desde hace más de un mes, falta de interés por las cosas, insomnio y pérdida de apetito",F32.9,PAT008
+"Paciente con episodios de dolor de cabeza intenso y pulsátil en un lado, con náuseas y molestias ante la luz y el ruido",G43.909,PAT009
+"Paciente fumador con tos y flemas por las mañanas desde hace tiempo y sensación de ahogo al caminar",J44.9,PAT010
+"Paciente con ardor que sube desde el estómago hacia la garganta después de comer y que empeora al tumbarse",K21.9,PAT011
+"Paciente con escozor al orinar, ganas frecuentes de orinar y molestias en la parte baja del abdomen",N30.90,PAT012
+"Paciente sin síntomas con cifras de colesterol elevadas en un análisis de sangre",E78.00,PAT013
+"Paciente con aumento de peso progresivo en los últimos años y dificultad para hacer ejercicio",E66.9,PAT014
+"Paciente con dolor intenso, hinchazón y enrojecimiento en el dedo gordo del pie, de aparición nocturna",M10.079,PAT015
+"Paciente con dolor en ambas rodillas al caminar y subir escaleras, que mejora con el reposo",M17.0,PAT016
+"Paciente con cansancio y molestias en la zona derecha del abdomen, con alteración del hígado en el análisis de sangre",K76.9,PAT017
+"Paciente con palpitaciones irregulares, falta de aire y mareos ocasionales",I49.9,PAT018
+"Paciente con nerviosismo, pérdida de peso a pesar de comer igual, temblor en las manos, sudoración y palpitaciones",E05.90,PAT019
+"Paciente con placas rojas y escamosas en codos y rodillas que producen picor",L40.9,PAT020

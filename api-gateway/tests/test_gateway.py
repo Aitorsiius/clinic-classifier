@@ -1,4 +1,4 @@
-"""Tests unitarios de las funciones de ``api-gateway-service/main.py``.
+"""Tests unitarios de las funciones de ``api-gateway/main.py``.
 
 Cubren la creación y validación de tokens JWT que realiza el gateway.
 """

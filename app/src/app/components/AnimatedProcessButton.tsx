@@ -39,15 +39,28 @@ export function AnimatedProcessButton({
 
   // Cronómetro en vivo: mientras se procesa y haya startTime, refresca el
   // tiempo transcurrido cada 100 ms. Al parar, congela el último valor.
+  //
+  // El tiempo SIEMPRE se calcula como `Date.now() - startTime` (reloj de
+  // pared), nunca acumulando ticks: aunque el navegador ralentice o congele
+  // el setInterval cuando la pestaña pasa a segundo plano, en cuanto vuelve a
+  // ejecutarse muestra el tiempo real transcurrido. El listener de
+  // `visibilitychange` fuerza ese recálculo en el instante en que el usuario
+  // regresa a la pestaña, sin esperar al siguiente tick.
   useEffect(() => {
     if (!isProcessing || !startTime) {
       return;
     }
-    setElapsedMs(Date.now() - startTime);
-    const interval = setInterval(() => {
-      setElapsedMs(Date.now() - startTime);
-    }, 100);
-    return () => clearInterval(interval);
+    const tick = () => setElapsedMs(Date.now() - startTime);
+    tick();
+    const interval = setInterval(tick, 100);
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
   }, [isProcessing, startTime]);
 
   // Si se proporciona progreso externo, úsalo; si no, usa animación automática

@@ -81,7 +81,6 @@ class AuditRecordRequest(BaseModel):
 class AuditBatchRequest(BaseModel):
     """Solicitud de auditoría para lote de registros"""
     records: List[AuditRecordRequest]
-    algorithm: Optional[str] = "algoritmo1"
     top_k: Optional[int] = 5
     # Ejecuta la auditoría a través del pipeline de búsqueda con IA.
     use_ai: bool = False
@@ -229,7 +228,7 @@ def _build_audit_response(report, top_k: int) -> AuditReportResponse:
         findings=findings
     )
 
-async def _log_audit_to_service(report, current_user: str, algorithm: str, top_k: int, use_ai: bool):
+async def _log_audit_to_service(report, current_user: str, top_k: int, use_ai: bool):
     """Envía el log de auditoría al servicio externo de forma asíncrona."""
     if not current_user:
         return
@@ -239,7 +238,6 @@ async def _log_audit_to_service(report, current_user: str, algorithm: str, top_k
             "session_id": f"audit_session_{report.audit_id}",
             "username": current_user,
             "records_count": report.total_records,
-            "algorithm": algorithm,
             "top_k": top_k,
             "use_ai": use_ai,
             "total_time_ms": round(report.total_time_ms, 2),
@@ -337,9 +335,8 @@ async def audit_batch_stream(
                 audit_task = loop.run_in_executor(
                     executor,
                     lambda: auditor.audit_batch(
-                        diagnosis_records, 
-                        algorithm=request.algorithm or "algoritmo1",
-                        top_k=request.top_k or 5, 
+                        diagnosis_records,
+                        top_k=request.top_k or 5,
                         progress_callback=progress_callback,
                         use_ai=request.use_ai
                     )
@@ -378,16 +375,14 @@ async def audit_batch(
     try:
         # 1. Extraer configuraciones y mapear registros
         top_k = request.top_k or 5
-        algorithm = request.algorithm or "algoritmo1"
         diagnosis_records = _build_diagnosis_records(request.records)
         
         # 2. Ejecutar auditoría localmente
         search_engine = GatewaySearchEngine(API_GATEWAY_URL)
         auditor = CodeAuditor(search_engine)
         report = auditor.audit_batch(
-        diagnosis_records, 
-            algorithm=algorithm, 
-            top_k=top_k, 
+        diagnosis_records,
+            top_k=top_k,
             use_ai=request.use_ai
         )
         
@@ -396,7 +391,6 @@ async def audit_batch(
             _log_audit_to_service,
             report=report,
             current_user=current_user,
-            algorithm=algorithm,
             top_k=top_k,
             use_ai=request.use_ai
         )

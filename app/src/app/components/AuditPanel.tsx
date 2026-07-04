@@ -10,6 +10,7 @@ import { AuditReportData } from './AuditResults';
 import { AnimatedProcessButton } from './AnimatedProcessButton';
 import { Filters } from './Filters';
 import { scrollToRevealExpansion } from '../utils/scroll';
+import { cleanDiagnosisText } from '../utils/format';
 
 interface CSVRow {
   [key: string]: string;
@@ -30,8 +31,6 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
   const setCSVData = session.setCSVData;
   const fileName = session.fileName;
   const setFileName = session.setFileName;
-  const algorithm = session.auditAlgorithm;
-  const setAlgorithm = session.setAuditAlgorithm;
   const topK = session.auditTopK;
   const setTopK = session.setAuditTopK;
   const useAI = session.auditUseAI;
@@ -64,15 +63,61 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
     }
   }, [csvData]);
 
+  // Tokeniza el contenido CSV respetando los campos entrecomillados: las comas y
+  // los saltos de línea DENTRO de comillas dobles no separan campos/filas, y las
+  // comillas escapadas ("") se interpretan como una comilla literal. Esto es
+  // imprescindible porque "diagnosis_text" va entre comillas y contiene comas; un
+  // split('\n')/split(',') ingenuo descartaría o partiría mal esas filas.
+  const parseCSVRows = (content: string): string[][] => {
+    const text = content.replace(/\r\n?/g, '\n');
+    const rows: string[][] = [];
+    let row: string[] = [];
+    let field = '';
+    let inQuotes = false;
+
+    for (let i = 0; i < text.length; i++) {
+      const ch = text[i];
+      if (inQuotes) {
+        if (ch === '"') {
+          if (text[i + 1] === '"') { field += '"'; i++; } // comilla escapada
+          else { inQuotes = false; }
+        } else {
+          field += ch;
+        }
+      } else if (ch === '"') {
+        inQuotes = true;
+      } else if (ch === ',') {
+        row.push(field);
+        field = '';
+      } else if (ch === '\n') {
+        row.push(field);
+        rows.push(row);
+        row = [];
+        field = '';
+      } else {
+        field += ch;
+      }
+    }
+    // Último campo/fila cuando el archivo no termina en salto de línea.
+    if (field.length > 0 || row.length > 0) {
+      row.push(field);
+      rows.push(row);
+    }
+    return rows;
+  };
+
   const parseCSV = (content: string): CSVRow[] => {
-    const lines = content.trim().split('\n');
+    // Descartar filas totalmente vacías (líneas en blanco).
+    const lines = parseCSVRows(content).filter(
+      cells => cells.some(c => c.trim() !== '')
+    );
     if (lines.length < 2) {
       throw new Error('El CSV debe contener encabezados y al menos una fila de datos');
     }
 
-    const headers = lines[0].split(',').map(h => h.trim());
+    const headers = lines[0].map(h => h.trim());
     const requiredHeaders = ['diagnosis_text', 'assigned_code'];
-    
+
     const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
     if (missingHeaders.length > 0) {
       throw new Error(`Columnas requeridas faltantes: ${missingHeaders.join(', ')}`);
@@ -80,12 +125,12 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
 
     const data: CSVRow[] = [];
     for (let i = 1; i < lines.length; i++) {
-      const values = lines[i].split(',').map(v => v.trim());
+      const values = lines[i];
       if (values.length !== headers.length) continue;
 
       const row: CSVRow = {};
       headers.forEach((header, index) => {
-        row[header] = values[index];
+        row[header] = (values[index] ?? '').trim();
       });
       data.push(row);
     }
@@ -145,11 +190,6 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
     }
   };
 
-  const handleAlgorithmChange = (newAlgo: string) => {
-    setAlgorithm(newAlgo);
-    session.setAuditAlgorithm(newAlgo);
-  };
-
   const handleTopKChange = (newTopK: number) => {
     setTopK(newTopK);
     session.setAuditTopK(newTopK);
@@ -179,7 +219,6 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
         },
         body: JSON.stringify({
           records: csvData,
-          algorithm: algorithm,
           top_k: topK,
           use_ai: useAI
         })
@@ -256,8 +295,6 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
       <CardContent className="space-y-6">
         {/* Sección de Filtros - Siempre visible */}
         <Filters
-          algorithm={algorithm}
-          setAlgorithm={handleAlgorithmChange}
           topK={topK}
           setTopK={handleTopKChange}
           isLoading={isProcessing}
@@ -310,7 +347,7 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
               ? 'border-blue-500 bg-blue-50'
               : 'border-gray-300 hover:border-gray-400'
           }`}
-        role="button" />
+        role="button">
           <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
           <p className="text-lg font-medium text-gray-700 mb-2">
             Arrastra tu archivo CSV aquí
@@ -359,7 +396,7 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
                 <tbody>
                   {csvData.slice(0, 5).map((row, idx) => (
                     <tr key={idx} className="border-b hover:bg-gray-50">
-                      <td className="px-4 py-2 text-gray-900">{row.diagnosis_text}</td>
+                      <td className="px-4 py-2 text-gray-900">{cleanDiagnosisText(row.diagnosis_text)}</td>
                       <td className="px-4 py-2 font-mono text-gray-900">{row.assigned_code}</td>
                     </tr>
                   ))}

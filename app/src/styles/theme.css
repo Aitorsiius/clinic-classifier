@@ -183,3 +183,8 @@
     line-height: 1.5;
   }
 }
+
+html body[data-scroll-locked] {
+  margin-right: 0 !important;
+  padding-right: 0 !important;
+}

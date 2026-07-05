@@ -151,7 +151,7 @@ export function LogoutOverlay() {
           role="status"
           aria-live="polite"
           className="fixed inset-0 z-[200] flex items-center justify-center overflow-y-auto bg-gradient-to-br from-blue-50 via-white to-indigo-100 px-6 py-10"
-          initial={{ opacity: 0 }}
+          initial={false}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
           transition={{ duration: 0.35, ease: 'easeInOut' }}

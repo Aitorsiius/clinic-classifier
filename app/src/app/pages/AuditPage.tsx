@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import { Header } from '../components/Header';
 import { AuditPanel } from '../components/AuditPanel';
 import { AuditResults, AuditReportData } from '../components/AuditResults';
@@ -6,14 +5,12 @@ import { useSession } from '../context/SessionContext';
 
 export default function AuditPage() {
   const session = useSession();
-  const [setIsLoading] = useState(false);
 
   // Usar estado del contexto
   const auditReport = session.auditReport;
   const setAuditReport = session.setAuditReport;
 
-  const handleAuditStart = async (auditResult: AuditReportData) => {
-    setIsLoading(true);
+  const handleAuditStart = (auditResult: AuditReportData) => {
     try {
       // Establecer el resultado de la auditoría en el contexto
       setAuditReport(auditResult);
@@ -24,8 +21,6 @@ export default function AuditPage() {
       session.setFileName('');
     } catch (error) {
       console.error('Error en la auditoría:', error);
-    } finally {
-      setIsLoading(false);
     }
   };
 

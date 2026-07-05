@@ -80,7 +80,7 @@ export function AuditResults({ report }: Readonly<AuditResultsProps>) {
       results = results.filter(f => 
         (f.assigned_code?.toLowerCase().includes(searchTerm)) ||
         (f.suggested_code?.toLowerCase().includes(searchTerm)) ||
-        (f.alternative_codes?.some(code => code && code.toLowerCase().includes(searchTerm))) ||
+        (f.alternative_codes?.some(code => code?.toLowerCase().includes(searchTerm))) ||
         (f.diagnosis_text?.toLowerCase().includes(searchTerm)) ||
         (f.patient_id?.toLowerCase().includes(searchTerm)) ||
         (f.discrepancy_type.toLowerCase().includes(searchTerm)) ||

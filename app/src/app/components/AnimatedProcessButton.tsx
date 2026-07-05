@@ -5,12 +5,12 @@ import { formatElapsedSeconds } from '../utils/format';
 // Configuración de las burbujas que ascienden por el agua (posición, tamaño,
 // altura de ascenso, deriva horizontal, duración y retardo de cada una).
 const BUBBLES = [
-  { left: 10, size: 6, rise: 40, drift: 4, duration: 2.8, delay: 0 },
-  { left: 24, size: 4, rise: 38, drift: -3, duration: 2.2, delay: 0.7 },
-  { left: 40, size: 7, rise: 42, drift: 5, duration: 3.3, delay: 1.2 },
-  { left: 55, size: 5, rise: 39, drift: -4, duration: 2.6, delay: 0.4 },
-  { left: 70, size: 4, rise: 41, drift: 3, duration: 3, delay: 1.5 },
-  { left: 85, size: 6, rise: 37, drift: -5, duration: 2.4, delay: 0.9 },
+  { id: 'b1', left: 10, size: 6, rise: 40, drift: 4, duration: 2.8, delay: 0 },
+  { id: 'b2', left: 24, size: 4, rise: 38, drift: -3, duration: 2.2, delay: 0.7 },
+  { id: 'b3', left: 40, size: 7, rise: 42, drift: 5, duration: 3.3, delay: 1.2 },
+  { id: 'b4', left: 55, size: 5, rise: 39, drift: -4, duration: 2.6, delay: 0.4 },
+  { id: 'b5', left: 70, size: 4, rise: 41, drift: 3, duration: 3, delay: 1.5 },
+  { id: 'b6', left: 85, size: 6, rise: 37, drift: -5, duration: 2.4, delay: 0.9 },
 ];
 
 interface AnimatedProcessButtonProps {
@@ -32,7 +32,7 @@ export function AnimatedProcessButton({
   label = 'Iniciar Auditoría',
   startTime,
 }: Readonly<AnimatedProcessButtonProps>) {
-  const [progress, setProgress] = useState(0);
+  const [progress, setProgress] = useState(0);  
   // Tiempo transcurrido (ms) desde startTime, refrescado periódicamente para
   // animar el cronómetro mientras dura el proceso.
   const [elapsedMs, setElapsedMs] = useState(0);
@@ -97,11 +97,9 @@ export function AnimatedProcessButton({
     }
   }, [isProcessing, progress, externalProgress]);
 
-  const percentText = externalProgress !== undefined ? `${Math.round(progress)}%` : '';
+  const percentText = externalProgress === undefined ? '' : `${Math.round(progress)}%`;
   const elapsedText = startTime ? ` (${formatElapsedSeconds(elapsedMs)})` : '';
-  const buttonLabel = isProcessing
-    ? `Procesando... ${percentText}${elapsedText}`
-    : label;
+  const buttonText = isProcessing ? `Procesando... ${percentText}${elapsedText}` : label;
 
   return (
     <button
@@ -155,7 +153,7 @@ export function AnimatedProcessButton({
           {/* Burbujas que ascienden */}
           {BUBBLES.map((b) => (
             <motion.span
-              key={b.left}
+              key={b.id}
               className="absolute rounded-full bg-white/60"
               style={{
                 left: `${b.left}%`,
@@ -214,7 +212,9 @@ export function AnimatedProcessButton({
             </svg>
           </motion.div>
         )}
-        <span className="text-sm">{buttonLabel}</span>
+        <span className="text-sm">
+          {buttonText}
+        </span>
       </div>
     </button>
   );

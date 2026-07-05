@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Alert, AlertDescription } from './ui/alert';
@@ -321,40 +321,66 @@ export function AuditPanel({ onAuditStart }: Readonly<AuditPanelProps>) {
           isLoading={isProcessing}
         />
 
-        {/* Modo IA: ejecuta la auditoría a través del pipeline de búsqueda con
-            IA (primera fase LLM que enriquece cada diagnóstico antes de
-            clasificar). Más preciso pero más lento por registro. */}
-        <div
-          className={`flex items-center justify-between gap-4 rounded-lg border p-4 transition-colors ${
-            useAI ? 'border-purple-300 bg-purple-50' : 'border-slate-200 bg-slate-50'
-          }`}
-        >
-          <div className="flex items-start gap-3">
-            <Zap className={`mt-0.5 h-5 w-5 flex-shrink-0 ${useAI ? 'text-purple-600 fill-current' : 'text-slate-400'}`} />
-            <div>
-              <p className="text-sm font-semibold text-slate-800">Auditar con IA</p>
-              <p className="text-xs text-slate-500">
-                Enriquece cada diagnóstico con IA antes de clasificarlo. Mejora la precisión,
-                pero la auditoría tarda más por registro.
-              </p>
-            </div>
-          </div>
+        {/* Bloque IA: el panel y su aviso van juntos para que space-y-6 los
+            trate como una sola unidad y el aviso quede pegado al panel. */}
+        <div>
+          {/* Modo IA: el panel ENTERO es clickable (alterna el modo IA). Ejecuta
+              la auditoría a través del pipeline de búsqueda con IA (primera fase
+              LLM que enriquece cada diagnóstico). Más preciso pero más lento. */}
           <button
             type="button"
             role="switch"
             aria-checked={useAI}
             onClick={() => setUseAI(!useAI)}
             disabled={isProcessing}
-            className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 ${
-              useAI ? 'bg-purple-600' : 'bg-slate-300'
+            className={`flex w-full items-center justify-between gap-4 rounded-lg border p-4 text-left transition-colors focus:outline-none focus:ring-2 focus:ring-purple-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60 ${
+              useAI ? 'border-purple-300 bg-purple-50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
             }`}
           >
+            <span className="flex items-start gap-3">
+              <Zap className={`mt-0.5 h-5 w-5 flex-shrink-0 ${useAI ? 'text-purple-600 fill-current' : 'text-slate-400'}`} />
+              <span className="block">
+                <span className="block text-sm font-semibold text-slate-800">Auditar con IA</span>
+                <span className="block text-xs text-slate-500">
+                  Enriquece cada diagnóstico con IA antes de clasificarlo. Mejora la precisión,
+                  pero la auditoría tarda más por registro.
+                </span>
+              </span>
+            </span>
+            {/* Interruptor visual: el click lo gestiona el botón padre. */}
             <span
-              className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                useAI ? 'translate-x-6' : 'translate-x-1'
+              aria-hidden="true"
+              className={`relative inline-flex h-6 w-11 flex-shrink-0 items-center rounded-full transition-colors ${
+                useAI ? 'bg-purple-600' : 'bg-slate-300'
               }`}
-            />
+            >
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
+                  useAI ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </span>
           </button>
+
+          {/* Aviso: al usar IA se recuerda que puede cometer errores.
+              Aparece y desaparece de forma suave (altura + opacidad). */}
+          <AnimatePresence initial={false}>
+            {useAI && (
+              <motion.div
+                key="ai-warning"
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                transition={{ duration: 0.25, ease: 'easeInOut' }}
+                className="overflow-hidden"
+              >
+                <p className="mt-2 flex items-center gap-1.5 text-xs text-amber-700">
+                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                  La IA puede cometer errores. Revisa siempre los resultados antes de usarlos.
+                </p>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Área de Arrastra y Suelta */}

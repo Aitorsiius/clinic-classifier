@@ -1,4 +1,5 @@
-import { Search, Loader2, X, Zap } from 'lucide-react';
+import { Search, Loader2, X, Zap, AlertCircle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useEffect } from 'react';
 
 interface SearchInputProps {
@@ -102,6 +103,26 @@ export function SearchInput({ value, onChange, onSearch, onClear, isLoading, use
           </button>
         </div>
       </div>
+
+      {/* Aviso: al usar IA se recuerda que puede cometer errores.
+          Aparece y desaparece de forma suave (altura + opacidad). */}
+      <AnimatePresence initial={false}>
+        {useAI && (
+          <motion.div
+            key="ai-warning"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.25, ease: 'easeInOut' }}
+            className="overflow-hidden"
+          >
+            <p className="mt-3 flex items-center gap-1.5 text-xs text-amber-700">
+              <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+              La IA puede cometer errores. Revisa siempre los resultados antes de usarlos.
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

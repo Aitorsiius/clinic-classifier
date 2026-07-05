@@ -23,10 +23,10 @@ export function EditRolesDialog({
   onOpenChange,
   onConfirm,
   isLoading
-}: EditRolesDialogProps) {
+}: Readonly<EditRolesDialogProps>) {
   const [admin, setAdmin] = useState(user?.admin || false);
   const [audit, setAudit] = useState(user?.audit || false);
-  const [user_role, setUserRole] = useState(!user?.admin && !user?.audit);
+  const [userRole, setUserRole] = useState(!user?.admin && !user?.audit);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
@@ -42,7 +42,7 @@ export function EditRolesDialog({
   }, [user, open]);
 
   const validateForm = (): string | null => {
-    const rolesSelected = [admin, audit, user_role].filter(Boolean).length;
+    const rolesSelected = [admin, audit, userRole].filter(Boolean).length;
     if (rolesSelected === 0) {
       return 'El usuario debe tener un rol';
     }
@@ -53,10 +53,16 @@ export function EditRolesDialog({
   };
 
   const isFormValid = validateForm() === null;
-  const hasChanges = user && (admin !== user.admin || audit !== user.audit || (!user.admin && !user.audit) !== user_role);
+  const hasChanges = user && (admin !== user.admin || audit !== user.audit || (!user.admin && !user.audit) !== userRole);
 
   // Rol actualmente seleccionado, derivado de los flags booleanos del formulario.
-  const selectedRole = admin ? 'admin' : audit ? 'audit' : user_role ? 'user' : '';
+  const getSelectedRole = () => {
+    if (admin) return 'admin';
+    if (audit) return 'audit';
+    if (userRole) return 'user';
+    return '';
+  };
+  const selectedRole = getSelectedRole();
 
   const handleRoleChange = (role: string) => {
     // Selección exclusiva: al elegir un rol se desmarcan automáticamente los demás.

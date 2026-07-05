@@ -18,18 +18,16 @@ export function DeleteUserDialog({
   onConfirm,
   isLoading,
   error
-}: DeleteUserDialogProps) {
-  const handleConfirm = async () => {
-    try {
-      await onConfirm(username);
-      // Borrado correcto: cerramos el diálogo. El usuario desaparece de la tabla,
-      // lo que sirve de confirmación visual. No usamos estado de "éxito" ni
-      // temporizadores: un cierre diferido podía cerrar un diálogo reabierto
-      // rápidamente para otro usuario y dejar su botón deshabilitado.
-      onOpenChange(false);
-    } catch (err) {
-      // Si falla, mantenemos el diálogo abierto; el error lo muestra el padre.
-    }
+}: Readonly<DeleteUserDialogProps>) {
+  const handleConfirm = () => {
+    // Solo cerramos el diálogo si el borrado tiene éxito. Si falla, el padre
+    // ya muestra el error (prop `error`) y relanza, así que mantenemos el
+    // diálogo abierto sin acción adicional aquí.
+    onConfirm(username)
+      .then(() => onOpenChange(false))
+      .catch(() => {
+        // Error ya gestionado por el padre.
+      });
   };
 
   return (

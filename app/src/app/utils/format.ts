@@ -47,7 +47,7 @@ export function cleanDiagnosisText(text: string | null | undefined): string {
   // Quitar una pareja de comillas envolventes (dobles o simples).
   if (cleaned.length >= 2) {
     const first = cleaned[0];
-    const last = cleaned[cleaned.length - 1];
+    const last = cleaned.at(-1);
     if ((first === '"' && last === '"') || (first === "'" && last === "'")) {
       cleaned = cleaned.slice(1, -1);
     }

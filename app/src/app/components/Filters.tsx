@@ -8,7 +8,7 @@ interface FiltersProps {
   isLoading?: boolean;
 }
 
-export function Filters({ topK, setTopK, isLoading = false }: FiltersProps) {
+export function Filters({ topK, setTopK, isLoading = false }: Readonly<FiltersProps>) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (

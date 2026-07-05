@@ -77,15 +77,14 @@ export function Header() {
                 >
                   Clasificar
                   {searchNotification && !isSearchPage && (
-                    <span
+                    <output
                       className="absolute -top-1 -right-1 flex h-3 w-3"
-                      role="status"
                       aria-label="Resultado de búsqueda disponible"
                       title="Resultado de búsqueda disponible"
                     >
                       <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
                       <span className="relative inline-flex h-3 w-3 rounded-full bg-amber-500"></span>
-                    </span>
+                    </output>
                   )}
                 </Link>
                 {(userData?.audit || userData?.admin) && (
@@ -99,15 +98,14 @@ export function Header() {
                   >
                     Auditar
                     {auditNotification && !isAuditPage && (
-                      <span
+                      <output
                         className="absolute -top-1 -right-1 flex h-3 w-3"
-                        role="status"
                         aria-label="Auditoría finalizada"
                         title="Auditoría finalizada"
                       >
                         <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-amber-400 opacity-75"></span>
                         <span className="relative inline-flex h-3 w-3 rounded-full bg-amber-500"></span>
-                      </span>
+                      </output>
                     )}
                   </Link>
                 )}

@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
 
 interface DiagnosisResult {
   score: number;
@@ -102,7 +102,7 @@ interface SessionContextType {
 
 const SessionContext = createContext<SessionContextType | undefined>(undefined);
 
-export function SessionProvider({ children }: { children: React.ReactNode }) {
+export function SessionProvider({ children }: Readonly<{ children: React.ReactNode }>) {
   // Clasificación
   const [searchText, setSearchText] = useState('');
   const [results, setResults] = useState<DiagnosisResult[]>([]);
@@ -195,11 +195,11 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     };
 
     // Escuchar eventos de storage (funciona entre pestañas)
-    window.addEventListener('storage', handleStorageChange);
+    globalThis.addEventListener('storage', handleStorageChange);
     
     // Escuchar eventos personalizados de login/logout (misma pestaña)
-    window.addEventListener('auth:logout', handleLogout);
-    window.addEventListener('auth:login', handleLogin);
+    globalThis.addEventListener('auth:logout', handleLogout);
+    globalThis.addEventListener('auth:login', handleLogin);
 
     // También verificar al montar si no hay token
     const token = isValidJWT(localStorage.getItem('auth_token')) ? localStorage.getItem('auth_token') : null;
@@ -208,60 +208,47 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     }
 
     return () => {
-      window.removeEventListener('storage', handleStorageChange);
-      window.removeEventListener('auth:logout', handleLogout);
-      window.removeEventListener('auth:login', handleLogin);
+      globalThis.removeEventListener('storage', handleStorageChange);
+      globalThis.removeEventListener('auth:logout', handleLogout);
+      globalThis.removeEventListener('auth:login', handleLogin);
     };
   }, []);
 
   // Cargar desde sessionStorage al montar el componente (solo si hay token)
   useEffect(() => {
-    const savedSearchText = sessionStorage.getItem('session_searchText');
-    const savedResults = sessionStorage.getItem('session_results');
-    const savedTopK = sessionStorage.getItem('session_topK');
-    const savedUseAI = sessionStorage.getItem('session_useAI');
-    const savedAiAnalysis = sessionStorage.getItem('session_aiAnalysis');
-    const savedSearchTimeMs = sessionStorage.getItem('session_searchTimeMs');
-    const savedIsLoading = sessionStorage.getItem('session_isLoading');
-    const savedCSVData = sessionStorage.getItem('session_csvData');
-    const savedFileName = sessionStorage.getItem('session_fileName');
-    const savedAuditTopK = sessionStorage.getItem('session_auditTopK');
-    const savedAuditUseAI = sessionStorage.getItem('session_auditUseAI');
-    const savedIsProcessing = sessionStorage.getItem('session_isProcessing');
-    const savedAuditProgress = sessionStorage.getItem('session_auditProgress');
-    const savedAuditStartTime = sessionStorage.getItem('session_auditStartTime');
-    const savedAuditReport = sessionStorage.getItem('session_auditReport');
-    const savedAuditNotification = sessionStorage.getItem('session_auditNotification');
-    const savedSearchNotification = sessionStorage.getItem('session_searchNotification');
+    // Restaura un valor de sessionStorage solo si existe, delegando el parseo
+    // al callback. Así el efecto queda como una lista plana de restauraciones.
+    const restore = (key: string, apply: (raw: string) => void) => {
+      const raw = sessionStorage.getItem(key);
+      if (raw) apply(raw);
+    };
 
-    if (savedSearchText) setSearchText(savedSearchText);
-    if (savedResults) setResults(JSON.parse(savedResults));
-    if (savedTopK) setTopK(Number.parseInt(savedTopK));
-    if (savedUseAI) setUseAI(savedUseAI === 'true');
-    if (savedAiAnalysis) setAiAnalysis(JSON.parse(savedAiAnalysis));
-    if (savedSearchTimeMs) setSearchTimeMs(savedSearchTimeMs === 'null' ? null : Number.parseFloat(savedSearchTimeMs));
-    if (savedIsLoading) setIsLoading(savedIsLoading === 'true');
-    if (savedCSVData) setCSVData(JSON.parse(savedCSVData));
-    if (savedFileName) setFileName(savedFileName);
-    if (savedAuditTopK) setAuditTopK(Number.parseInt(savedAuditTopK));
-    if (savedAuditUseAI) setAuditUseAI(savedAuditUseAI === 'true');
-    if (savedIsProcessing) setIsProcessing(savedIsProcessing === 'true');
-    if (savedAuditProgress) setAuditProgress(Number.parseInt(savedAuditProgress));
-    if (savedAuditStartTime) setAuditStartTime(savedAuditStartTime === 'null' ? null : Number.parseInt(savedAuditStartTime, 10));
-    if (savedAuditReport) setAuditReport(JSON.parse(savedAuditReport));
-    if (savedAuditNotification) setAuditNotification(savedAuditNotification === 'true');
-    if (savedSearchNotification) setSearchNotification(savedSearchNotification === 'true');
+    restore('session_searchText', setSearchText);
+    restore('session_results', (raw) => setResults(JSON.parse(raw)));
+    restore('session_topK', (raw) => setTopK(Number.parseInt(raw)));
+    restore('session_useAI', (raw) => setUseAI(raw === 'true'));
+    restore('session_aiAnalysis', (raw) => setAiAnalysis(JSON.parse(raw)));
+    restore('session_searchTimeMs', (raw) => setSearchTimeMs(raw === 'null' ? null : Number.parseFloat(raw)));
+    restore('session_isLoading', (raw) => setIsLoading(raw === 'true'));
+    restore('session_csvData', (raw) => setCSVData(JSON.parse(raw)));
+    restore('session_fileName', setFileName);
+    restore('session_auditTopK', (raw) => setAuditTopK(Number.parseInt(raw)));
+    restore('session_auditUseAI', (raw) => setAuditUseAI(raw === 'true'));
+    restore('session_isProcessing', (raw) => setIsProcessing(raw === 'true'));
+    restore('session_auditProgress', (raw) => setAuditProgress(Number.parseInt(raw)));
+    restore('session_auditStartTime', (raw) => setAuditStartTime(raw === 'null' ? null : Number.parseInt(raw, 10)));
+    restore('session_auditReport', (raw) => setAuditReport(JSON.parse(raw)));
+    restore('session_auditNotification', (raw) => setAuditNotification(raw === 'true'));
+    restore('session_searchNotification', (raw) => setSearchNotification(raw === 'true'));
 
     // Restaurar estadísticas de la sesión (si existen)
-    const savedSessionStats = sessionStorage.getItem('session_stats');
-    if (savedSessionStats) {
+    restore('session_stats', (raw) => {
       try {
-        const parsed = JSON.parse(savedSessionStats);
-        setSessionStats({ ...EMPTY_SESSION_STATS, ...parsed });
+        setSessionStats({ ...EMPTY_SESSION_STATS, ...JSON.parse(raw) });
       } catch {
         setSessionStats(EMPTY_SESSION_STATS);
       }
-    }
+    });
   }, []);
 
   // Guardar en sessionStorage cuando cambian los valores
@@ -368,46 +355,71 @@ export function SessionProvider({ children }: { children: React.ReactNode }) {
     sessionStorage.clear();
   };
 
-  const value: SessionContextType = {
-    searchText,
-    setSearchText,
-    results,
-    setResults,
-    topK,
-    setTopK,
-    useAI,
-    setUseAI,
-    aiAnalysis,
-    setAiAnalysis,
-    searchTimeMs,
-    setSearchTimeMs,
-    isLoading,
-    setIsLoading,
-    csvData,
-    setCSVData,
-    fileName,
-    setFileName,
-    auditTopK,
-    setAuditTopK,
-    auditUseAI,
-    setAuditUseAI,
-    isProcessing,
-    setIsProcessing,
-    auditProgress,
-    setAuditProgress,
-    auditStartTime,
-    setAuditStartTime,
-    auditReport,
-    setAuditReport,
-    auditNotification,
-    setAuditNotification,
-    searchNotification,
-    setSearchNotification,
-    sessionStats,
-    incrementStat,
-    sessionStartedAt,
-    clearSession,
-  };
+  const value = useMemo<SessionContextType>(
+    () => ({
+      searchText,
+      setSearchText,
+      results,
+      setResults,
+      topK,
+      setTopK,
+      useAI,
+      setUseAI,
+      aiAnalysis,
+      setAiAnalysis,
+      searchTimeMs,
+      setSearchTimeMs,
+      isLoading,
+      setIsLoading,
+      csvData,
+      setCSVData,
+      fileName,
+      setFileName,
+      auditTopK,
+      setAuditTopK,
+      auditUseAI,
+      setAuditUseAI,
+      isProcessing,
+      setIsProcessing,
+      auditProgress,
+      setAuditProgress,
+      auditStartTime,
+      setAuditStartTime,
+      auditReport,
+      setAuditReport,
+      auditNotification,
+      setAuditNotification,
+      searchNotification,
+      setSearchNotification,
+      sessionStats,
+      incrementStat,
+      sessionStartedAt,
+      clearSession,
+    }),
+    [
+      searchText,
+      results,
+      topK,
+      useAI,
+      aiAnalysis,
+      searchTimeMs,
+      isLoading,
+      csvData,
+      fileName,
+      auditTopK,
+      auditUseAI,
+      isProcessing,
+      auditProgress,
+      auditStartTime,
+      auditReport,
+      auditNotification,
+      searchNotification,
+      sessionStats,
+      incrementStat,
+      sessionStartedAt,
+      clearSession,
+    ]
+  );
 
   return (
     <SessionContext.Provider value={value}>

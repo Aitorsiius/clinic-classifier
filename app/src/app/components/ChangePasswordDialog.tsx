@@ -20,7 +20,7 @@ export function ChangePasswordDialog({
   onOpenChange,
   onConfirm,
   isLoading
-}: ChangePasswordDialogProps) {
+}: Readonly<ChangePasswordDialogProps>) {
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -148,7 +148,7 @@ export function ChangePasswordDialog({
           <AlertDialogAction
             onClick={handleConfirm}
             disabled={isLoading || !isFormValid || success}
-            className={`${!isFormValid ? 'opacity-50 cursor-not-allowed' : ''} bg-blue-600 hover:bg-blue-700`}
+            className={`${isFormValid ? '' : 'opacity-50 cursor-not-allowed'} bg-blue-600 hover:bg-blue-700`}
           >
             {isLoading ? 'Cambiando...' : 'Cambiar contraseña'}
           </AlertDialogAction>

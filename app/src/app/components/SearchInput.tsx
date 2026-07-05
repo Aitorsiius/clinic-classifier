@@ -12,7 +12,7 @@ interface SearchInputProps {
   isAuthenticated?: boolean;
 }
 
-export function SearchInput({ value, onChange, onSearch, onClear, isLoading, useAI = false, onUseAIChange, isAuthenticated = false }: SearchInputProps) {
+export function SearchInput({ value, onChange, onSearch, onClear, isLoading, useAI = false, onUseAIChange, isAuthenticated = false }: Readonly<SearchInputProps>) {
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && e.ctrlKey) {
       onSearch();
@@ -28,9 +28,9 @@ export function SearchInput({ value, onChange, onSearch, onClear, isLoading, use
       }
     };
 
-    window.addEventListener('keydown', handleGlobalKeyDown);
+    globalThis.addEventListener('keydown', handleGlobalKeyDown);
     return () => {
-      window.removeEventListener('keydown', handleGlobalKeyDown);
+      globalThis.removeEventListener('keydown', handleGlobalKeyDown);
     };
   }, [value, isLoading, onSearch]);
 

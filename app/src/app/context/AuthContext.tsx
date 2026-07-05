@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, useRef, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, useMemo, ReactNode } from 'react';
 import type { SessionStats } from './SessionContext';
 
 interface UserData {
@@ -45,9 +45,30 @@ interface AuthContextType {
 // Duración (ms) de la animación de desvanecimiento al cerrar sesión
 const LOGOUT_FADE_MS = 300;
 
+// Extrae de forma segura el mensaje de error del cuerpo de una respuesta fallida.
+function getResponseErrorMessage(data: unknown): string {
+  const fallback = 'Error de autenticación';
+  if (!data || typeof data !== 'object') return fallback;
+
+  const body = data as Record<string, unknown>;
+  if (body.detail) {
+    return typeof body.detail === 'string' ? body.detail : 'Credenciales inválidas';
+  }
+  if (typeof body.message === 'string') return body.message;
+  if (typeof body.error === 'string') return body.error;
+  return fallback;
+}
+
+// Normaliza cualquier excepción capturada a un mensaje legible.
+function getThrownErrorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === 'string') return err;
+  return 'Error de autenticación desconocido';
+}
+
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
+export function AuthProvider({ children }: Readonly<{ children: ReactNode }>) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [username, setUsername] = useState<string | null>(null);
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -99,8 +120,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               return parsed;
           }
           return null;
-      } catch (e) {
-          // Si el JSON es inválido (ej. alguien metió código raro), capturamos el error 
+      } catch {
+          // Si el JSON es inválido (ej. alguien metió código raro), capturamos el error
           // para que la app de React no explote en pantalla blanca.
           return null;
       }
@@ -134,21 +155,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const verifyToken = async (tok: string) => {
-    try {
-      const response = await fetch(`${API_GATEWAY_URL}/api/verify-token`, {
-        headers: {
-          'Authorization': `Bearer ${tok}`
-        }
-      });
-      
-      if (!response.ok) {
-        throw new Error('Verificación de token fallida');
+    const response = await fetch(`${API_GATEWAY_URL}/api/verify-token`, {
+      headers: {
+        'Authorization': `Bearer ${tok}`
       }
-      
-      return await response.json();
-    } catch (err) {
-      throw err;
+    });
+
+    if (!response.ok) {
+      throw new Error('Verificación de token fallida');
     }
+
+    return await response.json();
   };
 
   const login = async (username: string, password: string) => {
@@ -166,20 +183,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (!response.ok) {
         const data = await response.json();
-        // Extraer el mensaje de error de forma segura
-        let errorMsg = 'Error de autenticación';
-        
-        if (data && typeof data === 'object') {
-          if (data.detail) {
-            errorMsg = typeof data.detail === 'string' ? data.detail : 'Credenciales inválidas';
-          } else if (data.message) {
-            errorMsg = data.message;
-          } else if (data.error) {
-            errorMsg = data.error;
-          }
-        }
-        
-        throw new Error(errorMsg);
+        throw new Error(getResponseErrorMessage(data));
       }
 
       const data = await response.json();
@@ -203,17 +207,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       // Notificar a la sesión que comienza una nueva sesión: reinicia las
       // estadísticas y marca el inicio para el resumen al cerrar sesión.
-      window.dispatchEvent(new Event('auth:login'));
+      globalThis.dispatchEvent(new Event('auth:login'));
     } catch (err) {
-      let errorMessage = 'Error de autenticación desconocido';
-      
-      if (err instanceof Error) {
-        errorMessage = err.message;
-      } else if (typeof err === 'string') {
-        errorMessage = err;
-      }
-      
-      setError(errorMessage);
+      setError(getThrownErrorMessage(err));
       throw err;
     } finally {
       setIsLoading(false);
@@ -266,7 +262,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     sessionStorage.clear();
 
     // Disparar evento personalizado para limpiar las vistas
-    window.dispatchEvent(new Event('auth:logout'));
+    globalThis.dispatchEvent(new Event('auth:logout'));
 
     setToken(null);
     setUsername(null);
@@ -323,19 +319,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }, LOGOUT_FADE_MS + 100);
   };
 
-  const value: AuthContextType = {
-    isAuthenticated,
-    username,
-    userData,
-    token,
-    login,
-    logout,
-    skipLogoutDisplay,
-    isLoading,
-    isLoggingOut,
-    logoutSummary,
-    error
-  };
+  const value = useMemo<AuthContextType>(
+    () => ({
+      isAuthenticated,
+      username,
+      userData,
+      token,
+      login,
+      logout,
+      skipLogoutDisplay,
+      isLoading,
+      isLoggingOut,
+      logoutSummary,
+      error
+    }),
+    [
+      isAuthenticated,
+      username,
+      userData,
+      token,
+      login,
+      logout,
+      skipLogoutDisplay,
+      isLoading,
+      isLoggingOut,
+      logoutSummary,
+      error
+    ]
+  );
 
   return (
     <AuthContext.Provider value={value}>

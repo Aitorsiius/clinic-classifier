@@ -1,5 +1,5 @@
 import { useState, useRef } from 'react';
-import { ChevronRight, Smile, Meh, Frown, ChevronsRight, Copy, Check } from 'lucide-react';
+import { ChevronRight, Smile, Meh, Frown, ChevronsRight } from 'lucide-react';
 import type { DiagnosisResult } from '../App';
 import { motion, AnimatePresence } from 'framer-motion';
 import { scrollToRevealExpansion } from '../utils/scroll';
@@ -9,7 +9,7 @@ interface ResultCardProps {
   rank: number;
 }
 
-export function ResultCard({ result, rank }: ResultCardProps) {
+export function ResultCard({ result, rank }: Readonly<ResultCardProps>) {
   const [isOpen, setIsOpen] = useState(false);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -150,7 +150,7 @@ export function ResultCard({ result, rank }: ResultCardProps) {
             className="overflow-hidden"
           >
             {/* Jerarquía / Trazabilidad */}
-            {metadata && metadata.hierarchy && metadata.hierarchy.length > 0 ? (
+            {metadata?.hierarchy && metadata.hierarchy.length > 0 ? (
               <div className="mt-6 pt-4 border-t border-slate-200">
                 <h4 className="text-sm text-slate-800 mb-3 font-semibold flex items-center gap-2">
                   <ChevronsRight className="w-5 h-5 text-slate-400" />
@@ -159,7 +159,7 @@ export function ResultCard({ result, rank }: ResultCardProps) {
                 
                 <div className="space-y-2 pl-2">
                   {metadata.hierarchy.map((level, index) => (
-                    <div key={index} className="flex items-start" style={{ marginLeft: `${index * 1.5}rem` }}>
+                    <div key={level.code} className="flex items-start" style={{ marginLeft: `${index * 1.5}rem` }}>
                       <div className="flex items-center gap-3">
                         <code className="text-sm font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                           {level.code}

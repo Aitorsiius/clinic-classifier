@@ -387,49 +387,50 @@ QDRANT_DB_PATH = os.path.join(os.path.dirname(BASE_DIR), "cie10_qdrant")
 COLLECTION_NAME = "cie10_qdrant"
 
 class MedicalSearchEngine:
-    def __init__(self):
-        print("1-4 Inicializando sistema...")
-        
-        # Verificar el contenedor Docker de Embeddings
-        print(f"2-4 Conectando con Modelo de Embeddings: {EMBEDDING_URL}")
-        max_retries = 5
-        retry_delay = 2
+    @staticmethod
+    def _wait_for_service(name, url, probe, max_retries, retry_delay):
+        """Reintenta `probe()` hasta que el servicio esté listo o se agoten los intentos.
+
+        `probe()` debe devolver True cuando el servicio responde correctamente y
+        False si respondió pero todavía no está listo. Si nunca llega a responder
+        (ConnectionError/Timeout en todos los intentos), lanza ConnectionError.
+        """
         for attempt in range(max_retries):
             try:
-                # Llamada de prueba
-                response = requests.post(EMBEDDING_URL, json={"inputs": "test connection"}, timeout=5)
-                if response.status_code == 200:
-                    print("Conexión con servicio de embeddings establecida.")
-                    break
+                if probe():
+                    print(f"Conexión con servicio de {name} establecida.")
+                    return
             except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-                if attempt < max_retries - 1:
-                    print(f"  Intento {attempt + 1}/{max_retries} falló, reintentando en {retry_delay}s...")
-                    time.sleep(retry_delay)
-                else:
-                    print(f"\nERROR: No se puede conectar al servicio de embeddings en {EMBEDDING_URL}")
-                    raise ConnectionError("Embedding service is down")
+                if attempt >= max_retries - 1:
+                    print(f"\nERROR: No se puede conectar al servicio de {name} en {url}")
+                    print(f"  Último error: {type(e).__name__}: {str(e)}")
+                    raise ConnectionError(f"{name} service is down")
+                print(f"  Intento {attempt + 1}/{max_retries} falló ({type(e).__name__}), reintentando en {retry_delay}s...")
+                time.sleep(retry_delay)
+
+    def __init__(self):
+        print("1-4 Inicializando sistema...")
+
+        # Verificar el contenedor Docker de Embeddings
+        print(f"2-4 Conectando con Modelo de Embeddings: {EMBEDDING_URL}")
+
+        def probe_embeddings():
+            response = requests.post(EMBEDDING_URL, json={"inputs": "test connection"}, timeout=5)
+            return response.status_code == 200
+
+        self._wait_for_service("embeddings", EMBEDDING_URL, probe_embeddings, max_retries=5, retry_delay=2)
 
         # Verificar el servicio de Reranker
         print(f"3-4 Conectando con servicio de Reranker: {RERANKER_URL}")
-        max_retries = 15
-        retry_delay = 3
         health_url = RERANKER_URL.rsplit('/', 1)[0] + '/health'
-        for attempt in range(max_retries):
-            try:
-                response = requests.get(health_url, timeout=10)
-                if response.status_code == 200:
-                    print("Conexión con servicio de reranker establecida.")
-                    break
-                else:
-                    print(f"  Intento {attempt + 1}/{max_retries}: Reranker respondió con status {response.status_code}")
-            except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as e:
-                if attempt < max_retries - 1:
-                    print(f"  Intento {attempt + 1}/{max_retries} falló ({type(e).__name__}), reintentando en {retry_delay}s...")
-                    time.sleep(retry_delay)
-                else:
-                    print(f"\nERROR: No se puede conectar al servicio de reranker en {health_url}")
-                    print(f"  Último error: {type(e).__name__}: {str(e)}")
-                    raise ConnectionError("Reranker service is down")
+
+        def probe_reranker():
+            response = requests.get(health_url, timeout=10)
+            if response.status_code != 200:
+                print(f"  Reranker respondió con status {response.status_code}")
+            return response.status_code == 200
+
+        self._wait_for_service("reranker", health_url, probe_reranker, max_retries=15, retry_delay=3)
 
         # Conectar a Qdrant
         print(f"4-4 Conectando a base de datos Qdrant: {QDRANT_DB_PATH}")
@@ -452,7 +453,7 @@ class MedicalSearchEngine:
             # La respuesta contiene una lista de vectores
             return response.json()[0]
         else:
-            raise Exception(f"ERROR (en Docker): {response.text}")
+            raise requests.exceptions.HTTPError(f"ERROR (en Docker): {response.text}")
 
     def _looks_like_code(self, query: str) -> bool:
         """

@@ -21,7 +21,7 @@ export function animateScrollTo(
   duration = 400,
   easing: (t: number) => number = easeInOutCubic
 ): void {
-  if (typeof window === 'undefined') return;
+  if (typeof globalThis === 'undefined') return;
 
   const startY = window.scrollY;
 
@@ -41,7 +41,7 @@ export function animateScrollTo(
   let startTime: number | null = null;
 
   const step = (timestamp: number) => {
-    if (startTime === null) startTime = timestamp;
+    startTime ??= timestamp;
     const elapsed = timestamp - startTime;
     const progress = Math.min(elapsed / duration, 1);
     // El navegador acota el scroll a los límites del documento de forma
@@ -73,7 +73,7 @@ export function scrollToRevealExpansion(
   duration = 400,
   margin = 24
 ): void {
-  if (typeof window === 'undefined') return;
+  if (typeof globalThis === 'undefined') return;
 
   const rect = element.getBoundingClientRect();
   const viewportHeight = window.innerHeight;

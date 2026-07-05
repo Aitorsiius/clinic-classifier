@@ -51,7 +51,7 @@ const TIME_SEGMENTS = [
   { key: 'older', label: 'Más antiguo' },
 ];
 
-export function SearchHistory({ isOpen, onClose, onSelectSearch }: SearchHistoryProps) {
+export function SearchHistory({ isOpen, onClose, onSelectSearch }: Readonly<SearchHistoryProps>) {
   const [historyData, setHistoryData] = useState<SearchHistoryData | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -227,7 +227,7 @@ export function SearchHistory({ isOpen, onClose, onSelectSearch }: SearchHistory
                                   {truncateQuery(search.query)}
                                 </p>
                                 <p className="text-sm text-gray-600 dark:text-gray-400">
-                                  {search.results_count} resultado{search.results_count !== 1 ? 's' : ''}
+                                  {search.results_count} resultado{search.results_count === 1 ? '' : 's'}
                                 </p>
                               </div>
                               {search.used_ai_assistant && (

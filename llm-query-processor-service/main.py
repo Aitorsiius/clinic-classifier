@@ -48,6 +48,7 @@ if not PROJECT_ID or not LOCATION:
 # contiene el marcador `{query}`, que se sustituye por el texto del usuario en
 # tiempo de ejecución (usamos str.replace en lugar de str.format para no tener
 # que escapar las llaves del JSON de ejemplo del prompt).
+QUERY_PLACEHOLDER = "{query}"
 PROMPTS_FILE = os.getenv(
     "PROMPTS_FILE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "prompts.json")
 )
@@ -137,7 +138,7 @@ def call_gemini(prompt: str) -> str:
 
 def analyze_query(query: str) -> dict:
     """Analiza la consulta"""
-    prompt = PROMPTS["analyze"].replace("{query}", query)
+    prompt = PROMPTS["analyze"].replace(QUERY_PLACEHOLDER, query)
     response = call_gemini(prompt)
     try:
         json_start = response.find('{')
@@ -150,7 +151,7 @@ def analyze_query(query: str) -> dict:
 
 def correct_query(query: str) -> dict:
     """Corrige y normaliza la consulta: traduce acrónimos, normaliza términos"""
-    prompt = PROMPTS["correct"].replace("{query}", query)
+    prompt = PROMPTS["correct"].replace(QUERY_PLACEHOLDER, query)
     response = call_gemini(prompt)
     try:
         json_start = response.find('{')
@@ -181,7 +182,7 @@ def ai_search_assist(query: str) -> dict:
     usuario y el texto técnico-jerárquico indexado en la base vectorial. La IA
     se usa SOLO en esta fase; el re-ranking lo sigue haciendo el cross-encoder.
     """
-    prompt = PROMPTS["ai_search"].replace("{query}", query)
+    prompt = PROMPTS["ai_search"].replace(QUERY_PLACEHOLDER, query)
     response = call_gemini(prompt)
     fallback = {
         "diagnosis": "",

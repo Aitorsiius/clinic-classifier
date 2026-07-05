@@ -4,7 +4,6 @@ import { useSession } from '../context/SessionContext';
 import { useNavigate } from 'react-router-dom';
 import { Header } from '../components/Header';
 import { Button } from '../components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { Alert, AlertDescription } from '../components/ui/alert';
 import { AlertCircle, Plus } from 'lucide-react';
 import { UsersTable } from '../components/UsersTable';

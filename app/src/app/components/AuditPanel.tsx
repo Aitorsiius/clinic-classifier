@@ -16,11 +16,22 @@ interface CSVRow {
   [key: string]: string;
 }
 
+// Evento recibido por el stream SSE de auditoría. Los campos son opcionales
+// porque cada tipo de evento ('complete' | 'error' | 'progress') usa un
+// subconjunto distinto.
+interface AuditStreamEvent {
+  type: string;
+  result: AuditReportData;
+  message: string;
+  current: number;
+  total: number;
+}
+
 interface AuditPanelProps {
   onAuditStart?: (auditReport: AuditReportData) => void;
 }
 
-export function AuditPanel({ onAuditStart }: AuditPanelProps) {
+export function AuditPanel({ onAuditStart }: Readonly<AuditPanelProps>) {
   const session = useSession();
   const [error, setError] = useState<string | null>(null);
   const [dragActive, setDragActive] = useState(false);
@@ -75,33 +86,28 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
     let field = '';
     let inQuotes = false;
 
+    const endField = () => { row.push(field); field = ''; };
+    const endRow = () => { endField(); rows.push(row); row = []; };
+
     for (let i = 0; i < text.length; i++) {
       const ch = text[i];
       if (inQuotes) {
-        if (ch === '"') {
-          if (text[i + 1] === '"') { field += '"'; i++; } // comilla escapada
-          else { inQuotes = false; }
-        } else {
-          field += ch;
-        }
+        if (ch !== '"') { field += ch; }
+        else if (text[i + 1] === '"') { field += '"'; i++; } // comilla escapada
+        else { inQuotes = false; }
       } else if (ch === '"') {
         inQuotes = true;
       } else if (ch === ',') {
-        row.push(field);
-        field = '';
+        endField();
       } else if (ch === '\n') {
-        row.push(field);
-        rows.push(row);
-        row = [];
-        field = '';
+        endRow();
       } else {
         field += ch;
       }
     }
     // Último campo/fila cuando el archivo no termina en salto de línea.
     if (field.length > 0 || row.length > 0) {
-      row.push(field);
-      rows.push(row);
+      endRow();
     }
     return rows;
   };
@@ -185,7 +191,7 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
     e.stopPropagation();
     setDragActive(false);
 
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+    if (e.dataTransfer.files?.[0]) {
       handleFileSelect(e.dataTransfer.files[0]);
     }
   };
@@ -193,6 +199,60 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
   const handleTopKChange = (newTopK: number) => {
     setTopK(newTopK);
     session.setAuditTopK(newTopK);
+  };
+
+  // Aplica un evento SSE ya parseado al estado del componente. Un evento de
+  // tipo 'error' lanza para que el bloque try/catch de quien lo invoca lo
+  // registre (mismo comportamiento que antes de extraer esta función).
+  const applyAuditEvent = (data: AuditStreamEvent) => {
+    if (data.type === 'complete') {
+      setProgress(100);
+      onAuditStart?.(data.result);
+      // La auditoría sigue en segundo plano aunque el usuario cambie de vista.
+      // Si al terminar no está en la pantalla de auditoría, dejamos un aviso
+      // visual en la barra de navegación.
+      if (globalThis.location.pathname !== '/audit') {
+        session.setAuditNotification(true);
+      }
+    } else if (data.type === 'error') {
+      throw new Error(data.message);
+    } else if (data.type === 'progress') {
+      setProgress(Math.round((data.current / data.total) * 100));
+    }
+  };
+
+  // Procesa una línea SSE completa ("data: {...}"). Los errores de parseo (y
+  // los eventos 'error') se registran sin propagarse.
+  const processSSELine = (line: string) => {
+    if (!line.startsWith('data: ')) return;
+    try {
+      applyAuditEvent(JSON.parse(line.slice(6)));
+    } catch (parseError) {
+      console.error('Error parsing SSE data:', parseError);
+    }
+  };
+
+  // Lee el cuerpo de la respuesta SSE en streaming y procesa cada línea
+  // completa, manteniendo la última línea parcial en el buffer.
+  const readAuditStream = async (reader: ReadableStreamDefaultReader<Uint8Array>) => {
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split('\n');
+
+      // Procesar líneas completas (todas menos la última, potencialmente parcial).
+      for (let i = 0; i < lines.length - 1; i++) {
+        processSSELine(lines[i]);
+      }
+
+      // Mantener la última línea incompleta
+      buffer = lines.at(-1) || '';
+    }
   };
 
   const handleSubmit = async () => {
@@ -233,46 +293,7 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response body');
 
-      const decoder = new TextDecoder();
-      let buffer = '';
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split('\n');
-
-        // Procesar líneas completas
-        for (let i = 0; i < lines.length - 1; i++) {
-          const line = lines[i];
-          if (line.startsWith('data: ')) {
-            try {
-              const data = JSON.parse(line.slice(6));
-              
-              if (data.type === 'complete') {
-                setProgress(100);
-                onAuditStart?.(data.result);
-                // La auditoría sigue en segundo plano aunque el usuario cambie
-                // de vista. Si al terminar no está en la pantalla de auditoría,
-                // dejamos un aviso visual en la barra de navegación.
-                if (window.location.pathname !== '/audit') {
-                  session.setAuditNotification(true);
-                }
-              } else if (data.type === 'error') {
-                throw new Error(data.message);
-              } else if (data.type === 'progress') {
-                setProgress(Math.round((data.current / data.total) * 100));
-              }
-            } catch (parseError) {
-              console.error('Error parsing SSE data:', parseError);
-            }
-          }
-        }
-
-        // Mantener la última línea incompleta
-        buffer = lines[lines.length - 1];
-      }
+      await readAuditStream(reader);
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Ocurrió un error';
       setError(errorMessage);
@@ -394,8 +415,8 @@ export function AuditPanel({ onAuditStart }: AuditPanelProps) {
                   </tr>
                 </thead>
                 <tbody>
-                  {csvData.slice(0, 5).map((row, idx) => (
-                    <tr key={idx} className="border-b hover:bg-gray-50">
+                  {csvData.slice(0, 5).map((row) => (
+                    <tr key={`${row.assigned_code}-${row.diagnosis_text}`} className="border-b hover:bg-gray-50">
                       <td className="px-4 py-2 text-gray-900">{cleanDiagnosisText(row.diagnosis_text)}</td>
                       <td className="px-4 py-2 font-mono text-gray-900">{row.assigned_code}</td>
                     </tr>

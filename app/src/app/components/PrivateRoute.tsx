@@ -5,7 +5,7 @@ interface PrivateRouteProps {
   children: React.ReactNode;
 }
 
-export function PrivateRoute({ children }: PrivateRouteProps) {
+export function PrivateRoute({ children }: Readonly<PrivateRouteProps>) {
   const { isAuthenticated, isLoading } = useAuth();
 
   if (isLoading) {

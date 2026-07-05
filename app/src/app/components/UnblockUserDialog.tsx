@@ -48,7 +48,7 @@ export function UnblockUserDialog({
   error,
   onOpenChange,
   onConfirm,
-}: UnblockUserDialogProps) {
+}: Readonly<UnblockUserDialogProps>) {
   const [localError, setLocalError] = useState<string | null>(null);
 
   const handleConfirm = async () => {
@@ -78,6 +78,46 @@ export function UnblockUserDialog({
   const failedAttempts = blockInfo?.failed_attempts ?? [];
   const blockCount = blockInfo?.block_count ?? 0;
   const displayError = error ?? localError;
+
+  // Contenido del listado de intentos fallidos: cargando, vacío o la lista.
+  const renderFailedAttempts = () => {
+    if (isLoadingInfo) {
+      return (
+        <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500">
+          <Loader2 className="w-4 h-4 animate-spin" />
+          Cargando intentos...
+        </div>
+      );
+    }
+
+    if (failedAttempts.length === 0) {
+      return (
+        <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-sm text-gray-500">
+          No hay intentos fallidos registrados.
+        </div>
+      );
+    }
+
+    return (
+      <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
+        {failedAttempts.map((attempt, idx) => (
+          <div
+            key={`${attempt.timestamp}-${idx}`}
+            className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
+          >
+            <div className="flex items-center gap-2 text-gray-700">
+              <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <span>{formatDate(attempt.timestamp)}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+              <Globe className="w-3 h-3 shrink-0" />
+              <span className="break-all">{attempt.ip_address ?? 'IP desconocida'}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   return (
     <AlertDialog open={open} onOpenChange={handleOpenChange}>
@@ -133,34 +173,7 @@ export function UnblockUserDialog({
             )}
           </div>
 
-          {isLoadingInfo ? (
-            <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-500">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              Cargando intentos...
-            </div>
-          ) : failedAttempts.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-gray-200 py-6 text-center text-sm text-gray-500">
-              No hay intentos fallidos registrados.
-            </div>
-          ) : (
-            <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 divide-y divide-gray-100">
-              {failedAttempts.map((attempt, idx) => (
-                <div
-                  key={`${attempt.timestamp}-${idx}`}
-                  className="flex items-center justify-between gap-3 px-3 py-2 text-sm"
-                >
-                  <div className="flex items-center gap-2 text-gray-700">
-                    <Clock className="w-3.5 h-3.5 text-gray-400 shrink-0" />
-                    <span>{formatDate(attempt.timestamp)}</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 text-xs text-gray-500">
-                    <Globe className="w-3 h-3 shrink-0" />
-                    <span className="break-all">{attempt.ip_address ?? 'IP desconocida'}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
+          {renderFailedAttempts()}
         </div>
 
         {displayError && (

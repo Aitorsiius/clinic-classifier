@@ -9,7 +9,7 @@ const BUBBLES = [
   { left: 24, size: 4, rise: 38, drift: -3, duration: 2.2, delay: 0.7 },
   { left: 40, size: 7, rise: 42, drift: 5, duration: 3.3, delay: 1.2 },
   { left: 55, size: 5, rise: 39, drift: -4, duration: 2.6, delay: 0.4 },
-  { left: 70, size: 4, rise: 41, drift: 3, duration: 3.0, delay: 1.5 },
+  { left: 70, size: 4, rise: 41, drift: 3, duration: 3, delay: 1.5 },
   { left: 85, size: 6, rise: 37, drift: -5, duration: 2.4, delay: 0.9 },
 ];
 
@@ -31,7 +31,7 @@ export function AnimatedProcessButton({
   progress: externalProgress,
   label = 'Iniciar Auditoría',
   startTime,
-}: AnimatedProcessButtonProps) {
+}: Readonly<AnimatedProcessButtonProps>) {
   const [progress, setProgress] = useState(0);
   // Tiempo transcurrido (ms) desde startTime, refrescado periódicamente para
   // animar el cronómetro mientras dura el proceso.
@@ -97,6 +97,12 @@ export function AnimatedProcessButton({
     }
   }, [isProcessing, progress, externalProgress]);
 
+  const percentText = externalProgress !== undefined ? `${Math.round(progress)}%` : '';
+  const elapsedText = startTime ? ` (${formatElapsedSeconds(elapsedMs)})` : '';
+  const buttonLabel = isProcessing
+    ? `Procesando... ${percentText}${elapsedText}`
+    : label;
+
   return (
     <button
       onClick={onClick}
@@ -147,9 +153,9 @@ export function AnimatedProcessButton({
           </motion.div>
 
           {/* Burbujas que ascienden */}
-          {BUBBLES.map((b, i) => (
+          {BUBBLES.map((b) => (
             <motion.span
-              key={i}
+              key={b.left}
               className="absolute rounded-full bg-white/60"
               style={{
                 left: `${b.left}%`,
@@ -208,11 +214,7 @@ export function AnimatedProcessButton({
             </svg>
           </motion.div>
         )}
-        <span className="text-sm">
-          {isProcessing
-            ? `Procesando... ${externalProgress !== undefined ? `${Math.round(progress)}%` : ''}${startTime ? ` (${formatElapsedSeconds(elapsedMs)})` : ''}`
-            : label}
-        </span>
+        <span className="text-sm">{buttonLabel}</span>
       </div>
     </button>
   );

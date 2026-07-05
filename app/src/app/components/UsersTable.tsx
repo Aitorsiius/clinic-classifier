@@ -49,8 +49,11 @@ interface UsersTableProps {
 
 const PAGE_SIZE_OPTIONS = [5, 10, 20, 50];
 
-const getUserRole = (user: User): 'admin' | 'audit' | 'user' =>
-  user.admin ? 'admin' : user.audit ? 'audit' : 'user';
+const getUserRole = (user: User): 'admin' | 'audit' | 'user' => {
+  if (user.admin) return 'admin';
+  if (user.audit) return 'audit';
+  return 'user';
+};
 
 export function UsersTable({
   users,
@@ -61,7 +64,7 @@ export function UsersTable({
   onUnblock,
   onRefresh,
   currentUsername
-}: UsersTableProps) {
+}: Readonly<UsersTableProps>) {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');

@@ -26,7 +26,7 @@ interface AIAnalysisPanelProps {
   shouldCollapse?: boolean;
 }
 
-export function AIAnalysisPanel({ data, shouldCollapse = false }: AIAnalysisPanelProps) {
+export function AIAnalysisPanel({ data, shouldCollapse = false }: Readonly<AIAnalysisPanelProps>) {
   const [isExpanded, setIsExpanded] = useState(true);
   const [copiedText, setCopiedText] = useState<string | null>(null);
 
@@ -60,7 +60,7 @@ export function AIAnalysisPanel({ data, shouldCollapse = false }: AIAnalysisPane
   };
 
   // El diagnóstico está vacío o la consulta no es clínicamente interpretable.
-  const hasDiagnosis = Boolean(data.diagnosis && data.diagnosis.trim());
+  const hasDiagnosis = Boolean(data.diagnosis?.trim());
   const tips = Array.isArray(data.improvement_tips) ? data.improvement_tips : [];
   const isInvalid = data.is_valid_medical_query === false || !hasDiagnosis;
 
@@ -156,7 +156,7 @@ export function AIAnalysisPanel({ data, shouldCollapse = false }: AIAnalysisPane
                       <ul className="space-y-2">
                         {tips.map((tip, idx) => (
                           <li
-                            key={idx}
+                            key={tip}
                             className="flex items-start gap-2 bg-amber-50 border border-amber-100 rounded-lg p-3"
                           >
                             <span className="mt-0.5 flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-full bg-amber-200 text-xs font-semibold text-amber-800">

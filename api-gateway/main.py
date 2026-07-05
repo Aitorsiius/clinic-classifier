@@ -407,7 +407,7 @@ async def health_check():
             async with httpx.AsyncClient(timeout=5.0) as client:
                 response = await client.get(f"{LLM_QUERY_PROCESSOR_URL}/health")
                 llm_status = response.json()
-        except Exception as e:
+        except Exception:
             logger.exception("LLM processor health check failed")
             llm_status = {"status": "unhealthy"}
         
@@ -416,7 +416,7 @@ async def health_check():
             "backend": backend_status,
             "llm_processor": llm_status
         }
-    except Exception as e:
+    except Exception:
         logger.exception("Backend health check failed")
         return JSONResponse(
             status_code=503,

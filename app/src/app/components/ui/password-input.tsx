@@ -22,7 +22,7 @@ export function PasswordInput({
   leftIcon,
   disabled,
   ...props
-}: PasswordInputProps) {
+}: Readonly<PasswordInputProps>) {
   const [visible, setVisible] = useState(false);
 
   const show = useCallback(() => setVisible(true), []);

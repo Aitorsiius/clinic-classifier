@@ -12,7 +12,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from './ui/select';
-import { Download, FileJson, TrendingUp, AlertTriangle, CheckCircle2, Search, X } from 'lucide-react';
+import { Download, FileJson, AlertTriangle, CheckCircle2, Search, X } from 'lucide-react';
 import { formatDuration, cleanDiagnosisText } from '../utils/format';
 
 export interface AuditResult {
@@ -63,7 +63,7 @@ const DiscrepancyTypeBorderColors: Record<string, string> = {
   'no_coincidencia': '#ef4444',   // red-500
 };
 
-export function AuditResults({ report }: AuditResultsProps) {
+export function AuditResults({ report }: Readonly<AuditResultsProps>) {
   const [filterType, setFilterType] = useState<string | null>(null);
   const [filterCode, setFilterCode] = useState<string>('');
   const [sortBy, setSortBy] = useState<'code' | 'score' | 'type'>('code');
@@ -78,13 +78,13 @@ export function AuditResults({ report }: AuditResultsProps) {
     if (filterCode.trim()) {
       const searchTerm = filterCode.toLowerCase().trim();
       results = results.filter(f => 
-        (f.assigned_code && f.assigned_code.toLowerCase().includes(searchTerm)) ||
-        (f.suggested_code && f.suggested_code.toLowerCase().includes(searchTerm)) ||
-        (f.alternative_codes && f.alternative_codes.some(code => code && code.toLowerCase().includes(searchTerm))) ||
-        (f.diagnosis_text && f.diagnosis_text.toLowerCase().includes(searchTerm)) ||
-        (f.patient_id && f.patient_id.toLowerCase().includes(searchTerm)) ||
-        (f.discrepancy_type && f.discrepancy_type.toLowerCase().includes(searchTerm)) ||
-        (f.explanation && f.explanation.toLowerCase().includes(searchTerm))
+        (f.assigned_code?.toLowerCase().includes(searchTerm)) ||
+        (f.suggested_code?.toLowerCase().includes(searchTerm)) ||
+        (f.alternative_codes?.some(code => code && code.toLowerCase().includes(searchTerm))) ||
+        (f.diagnosis_text?.toLowerCase().includes(searchTerm)) ||
+        (f.patient_id?.toLowerCase().includes(searchTerm)) ||
+        (f.discrepancy_type.toLowerCase().includes(searchTerm)) ||
+        (f.explanation?.toLowerCase().includes(searchTerm))
       );
     }
 
@@ -109,7 +109,7 @@ export function AuditResults({ report }: AuditResultsProps) {
     link.download = `audit-report-${report.audit_id}.json`;
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    link.remove();
     URL.revokeObjectURL(url);
   };
 
@@ -128,7 +128,7 @@ export function AuditResults({ report }: AuditResultsProps) {
     link.download = `reporte-auditoria-${report.audit_id}.csv`;
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
+    link.remove();
     URL.revokeObjectURL(url);
   };
 
@@ -393,11 +393,11 @@ export function AuditResults({ report }: AuditResultsProps) {
                                 Códigos Alternativos {(Boolean(report.top_k) && `(${finding.alternative_codes.length} candidatos)`)}
                               </p>
                               <div className="flex flex-wrap gap-2">
-                                {finding.alternative_codes.map((code, i) => {
+                                {finding.alternative_codes.map((code) => {
                                   const isAssignedCode = code === finding.assigned_code;
                                   return (
-                                    <Badge 
-                                      key={i} 
+                                    <Badge
+                                      key={code}
                                       variant="outline" 
                                       className={`text-sm font-mono ${
                                         isAssignedCode 

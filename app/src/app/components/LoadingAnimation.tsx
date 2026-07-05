@@ -5,7 +5,7 @@ interface LoadingAnimationProps {
 }
 
 // Componente SVG cardio personalizado
-function CardioIcon({ useAI }: { useAI: boolean }) {
+function CardioIcon({ useAI }: Readonly<{ useAI: boolean }>) {
   const color = useAI ? '#a855f7' : '#2563eb'; // púrpura si usa IA, azul si no
   
   return (
@@ -44,17 +44,7 @@ function CardioIcon({ useAI }: { useAI: boolean }) {
   );
 }
 
-export function LoadingAnimation({ useAI }: LoadingAnimationProps) {
-  const progressVariants = {
-    animate: {
-      width: ['0%', '100%', '0%'],
-      transition: {
-        duration: 2,
-        repeat: Infinity,
-        ease: 'easeInOut',
-      },
-    },
-  };
+export function LoadingAnimation({ useAI }: Readonly<LoadingAnimationProps>) {
 
   const baseColor = useAI ? 'from-purple-400 to-purple-600' : 'from-blue-400 to-blue-600';
   const textColor = useAI ? 'text-purple-700' : 'text-slate-700';

@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Header } from '../components/Header';
 import { SearchInput } from '../components/SearchInput';
 import { ResultsList } from '../components/ResultsList';
@@ -124,7 +124,7 @@ export default function SearchPage() {
       // Notificar al finalizar TODO el proceso (resultados + IA si estaba activa).
       // Se coloca aquí, al final del bloque de éxito, para que el badge solo
       // aparezca cuando la búsqueda está completamente resuelta.
-      if (window.location.pathname !== '/search') {
+      if (globalThis.location.pathname !== '/search') {
         session.setSearchNotification(true);
       }
 

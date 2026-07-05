@@ -13,7 +13,7 @@ interface ResultsListProps {
   searchTimeMs?: number | null;
 }
 
-export function ResultsList({ results, isLoading, useAI, searchTimeMs }: ResultsListProps) {
+export function ResultsList({ results, isLoading, useAI, searchTimeMs }: Readonly<ResultsListProps>) {
   if (isLoading) {
     return (
       <motion.div

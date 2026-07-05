@@ -2,12 +2,11 @@ import { useState } from 'react';
 import { Header } from '../components/Header';
 import { AuditPanel } from '../components/AuditPanel';
 import { AuditResults, AuditReportData } from '../components/AuditResults';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../components/ui/card';
 import { useSession } from '../context/SessionContext';
 
 export default function AuditPage() {
   const session = useSession();
-  const [isLoading, setIsLoading] = useState(false);
+  const [setIsLoading] = useState(false);
 
   // Usar estado del contexto
   const auditReport = session.auditReport;
@@ -35,9 +34,7 @@ export default function AuditPage() {
       <Header />
       
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {!auditReport ? (
-          <AuditPanel onAuditStart={handleAuditStart} />
-        ) : (
+        {auditReport ? (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <div>
@@ -56,9 +53,11 @@ export default function AuditPage() {
                 Nueva Auditoría
               </button>
             </div>
-            
+
             <AuditResults report={auditReport} />
           </div>
+        ) : (
+          <AuditPanel onAuditStart={handleAuditStart} />
         )}
       </main>
     </div>

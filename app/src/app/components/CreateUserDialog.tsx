@@ -21,7 +21,7 @@ export function CreateUserDialog({
   onOpenChange,
   onConfirm,
   isLoading
-}: CreateUserDialogProps) {
+}: Readonly<CreateUserDialogProps>) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -60,7 +60,13 @@ export function CreateUserDialog({
   const isFormValid = validationError === null;
 
   // Rol actualmente seleccionado, derivado de los flags booleanos del formulario.
-  const selectedRole = admin ? 'admin' : audit ? 'audit' : user ? 'user' : '';
+  const getSelectedRole = () => {
+    if (admin) return 'admin';
+    if (audit) return 'audit';
+    if (user) return 'user';
+    return '';
+  };
+  const selectedRole = getSelectedRole();
 
   const handleRoleChange = (role: string) => {
     // Selección exclusiva: al elegir un rol se desmarcan automáticamente los demás.

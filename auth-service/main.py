@@ -78,8 +78,8 @@ ALLOWED_ORIGINS = [
 ]
 
 # Mensajes de error reutilizados en varios endpoints
-USER_NOT_FOUND_DETAIL = "User not found"
-DB_UNAVAILABLE_DETAIL = "Database connection unavailable"
+USER_NOT_FOUND_DETAIL = "Usuario no encontrado"
+DB_UNAVAILABLE_DETAIL = "Conexión con la base de datos no disponible"
 # Mensaje devuelto cuando una cuenta/IP está bloqueada por exceso de intentos
 # fallidos de inicio de sesión. Debe ser claro para el usuario final.
 ACCOUNT_BLOCKED_DETAIL = (
@@ -234,9 +234,9 @@ def verify_token(token: str) -> dict:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
+        raise HTTPException(status_code=401, detail="El token ha expirado")
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
 def hash_password(password: str) -> str:
     """
@@ -571,10 +571,10 @@ BEARER_PREFIX = "Bearer "
 def _extract_bearer_token(authorization: Optional[str]) -> str:
     """Extrae el token Bearer de la cabecera Authorization."""
     if not authorization:
-        raise HTTPException(status_code=401, detail="Authorization header required")
+        raise HTTPException(status_code=401, detail="Se requiere la cabecera de autorización")
     token = authorization.replace(BEARER_PREFIX, "").strip()
     if not token:
-        raise HTTPException(status_code=401, detail="Invalid authorization header format")
+        raise HTTPException(status_code=401, detail="Formato de la cabecera de autorización inválido")
     return token
 
 
@@ -593,7 +593,7 @@ def require_admin(authorization: Optional[str]) -> str:
     token = _extract_bearer_token(authorization)
     admin_username = get_current_admin_user(token)
     if not admin_username:
-        raise HTTPException(status_code=403, detail="Admin access required")
+        raise HTTPException(status_code=403, detail="Se requieren permisos de administrador")
     return admin_username
 
 
@@ -667,7 +667,7 @@ async def login(request: LoginRequest, request_obj: Request):
     if not user:
         # Usuario inexistente: no se registra intento ni bloqueo (no hay user_id
         # que asociar y el panel de administración solo gestiona usuarios reales).
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
     # El rate limiter identifica al usuario por su user_id (opaco), nunca por el
     # username, para que en la base de datos no se revele la identidad.
@@ -689,7 +689,7 @@ async def login(request: LoginRequest, request_obj: Request):
             )
             if outcome.get("blocked"):
                 raise HTTPException(status_code=403, detail=ACCOUNT_BLOCKED_DETAIL)
-        raise HTTPException(status_code=401, detail="Invalid credentials")
+        raise HTTPException(status_code=401, detail="Credenciales inválidas")
 
     # Login correcto: reiniciar el contador de intentos fallidos del usuario.
     if limiter:
@@ -772,7 +772,7 @@ async def refresh(request: RefreshTokenRequest):
     username = payload.get("username")
     
     if not username:
-        raise HTTPException(status_code=401, detail="Invalid token payload")
+        raise HTTPException(status_code=401, detail="Contenido del token inválido")
     
     # Crear nuevo token
     new_token, exp_time = create_token(username)
@@ -821,7 +821,7 @@ async def register(user: User):
         HTTPException: Si el usuario ya existe o hay error en la creación
     """
     if not create_user(user.username, user.password, user.admin, user.audit):
-        raise HTTPException(status_code=400, detail="User already exists or error creating user")
+        raise HTTPException(status_code=400, detail="El usuario ya existe o hubo un error al crearlo")
     
     return {
         "message": "User created successfully",
@@ -886,19 +886,19 @@ async def create_new_user(
 
     # Validar que username no está vacío
     if not request.username or len(request.username.strip()) < 3:
-        raise HTTPException(status_code=400, detail="Username must be at least 3 characters")
+        raise HTTPException(status_code=400, detail="El nombre de usuario debe tener al menos 3 caracteres")
     
     # Validar que password no está vacío
     if not request.password or len(request.password.strip()) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
     
     # Crear usuario
     if not create_user(request.username, request.password, request.admin, request.audit):
-        raise HTTPException(status_code=400, detail="User already exists or error creating user")
+        raise HTTPException(status_code=400, detail="El usuario ya existe o hubo un error al crearlo")
     
     user = get_user_by_username(request.username)
     if not user:
-        raise HTTPException(status_code=500, detail="Error retrieving created user")
+        raise HTTPException(status_code=500, detail="Error al obtener el usuario creado")
     
     # Trazabilidad: registrar la creación del usuario
     background_tasks.add_task(
@@ -955,15 +955,15 @@ async def update_user_role(
         all_users = get_all_users()
         admin_count = sum(1 for u in all_users if u.get("admin", False))
         if admin_count <= 1:
-            raise HTTPException(status_code=400, detail="Cannot remove admin role from the last admin")
+            raise HTTPException(status_code=400, detail="No se puede quitar el rol de administrador al último administrador")
     
     # Actualizar roles
     if not update_user_roles(username, request.admin, request.audit):
-        raise HTTPException(status_code=500, detail="Error updating user roles")
+        raise HTTPException(status_code=500, detail="Error al actualizar los roles del usuario")
     
     updated_user = get_user_by_username(username)
     if not updated_user:
-        raise HTTPException(status_code=500, detail="Error retrieving updated user")
+        raise HTTPException(status_code=500, detail="Error al obtener el usuario actualizado")
     
     # Trazabilidad: registrar el cambio de rol (roles antiguos y nuevos)
     background_tasks.add_task(
@@ -1020,11 +1020,11 @@ async def change_user_password(
     
     # Validar nueva contraseña
     if not request.new_password or len(request.new_password.strip()) < 6:
-        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        raise HTTPException(status_code=400, detail="La contraseña debe tener al menos 6 caracteres")
     
     # Actualizar contraseña
     if not update_user_password(username, request.new_password):
-        raise HTTPException(status_code=500, detail="Error updating password")
+        raise HTTPException(status_code=500, detail="Error al actualizar la contraseña")
     
     # Trazabilidad: registrar el cambio de contraseña (sin almacenar la contraseña)
     background_tasks.add_task(
@@ -1070,7 +1070,7 @@ async def delete_existing_user(
 
     # No se puede eliminar a sí mismo
     if username == admin_username:
-        raise HTTPException(status_code=400, detail="Cannot delete your own account")
+        raise HTTPException(status_code=400, detail="No puedes eliminar tu propia cuenta")
     
     # Verificar que el usuario existe
     user = get_user_by_username(username)
@@ -1082,11 +1082,11 @@ async def delete_existing_user(
         all_users = get_all_users()
         admin_count = sum(1 for u in all_users if u.get("admin", False))
         if admin_count <= 1:
-            raise HTTPException(status_code=400, detail="Cannot delete the last admin")
+            raise HTTPException(status_code=400, detail="No se puede eliminar al último administrador")
     
     # Eliminar usuario
     if not delete_user(username):
-        raise HTTPException(status_code=500, detail="Error deleting user")
+        raise HTTPException(status_code=500, detail="Error al eliminar el usuario")
     
     # Trazabilidad: registrar la eliminación del usuario (con los roles que tenía)
     background_tasks.add_task(
@@ -1192,7 +1192,7 @@ async def unblock_user(
     admin_user_id = get_user_id(admin_username) or admin_username
     unblocked = limiter.unblock(user_id, admin_user_id)
     if not unblocked:
-        raise HTTPException(status_code=400, detail="User is not blocked")
+        raise HTTPException(status_code=400, detail="El usuario no está bloqueado")
 
     # Trazabilidad: registrar el desbloqueo del usuario.
     background_tasks.add_task(

@@ -60,6 +60,12 @@ export function AuditPanel({ onAuditStart }: Readonly<AuditPanelProps>) {
     return /^[a-zA-Z0-9\-_]+$/.test(id);
   };
 
+  useEffect(() => {
+    const clearError = () => setError(null);
+    globalThis.addEventListener('auth:logout', clearError);
+    return () => globalThis.removeEventListener('auth:logout', clearError);
+  }, []);
+
   // Al cargar un CSV, la vista previa y el botón de acción aparecen con una
   // animación de entrada; desplazamos la página EN PARALELO (al compás) para
   // que el botón "Iniciar Auditoría" quede visible sin saltos bruscos.
@@ -291,7 +297,7 @@ export function AuditPanel({ onAuditStart }: Readonly<AuditPanelProps>) {
 
       // Procesar eventos SSE
       const reader = response.body?.getReader();
-      if (!reader) throw new Error('No response body');
+      if (!reader) throw new Error('La respuesta del servidor no contiene datos');
 
       await readAuditStream(reader);
     } catch (err) {

@@ -91,7 +91,7 @@ ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 # Mensaje genérico para respuestas 5xx: evita filtrar detalles internos.
-INTERNAL_ERROR_DETAIL = "Internal server error"
+INTERNAL_ERROR_DETAIL = "Error interno del servidor"
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -338,7 +338,7 @@ async def search_diagnosis(
     """Endpoint principal para buscar diagnósticos"""
     
     if not search_engine:
-        raise HTTPException(status_code=503, detail="Search engine not initialized")
+        raise HTTPException(status_code=503, detail="El motor de búsqueda no está inicializado")
     
     start_time = time.perf_counter()
     session_id = session_id or req.headers.get("x-session-id")

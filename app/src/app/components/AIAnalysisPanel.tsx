@@ -98,7 +98,7 @@ export function AIAnalysisPanel({ data, shouldCollapse = false }: Readonly<AIAna
               {/* Nota informativa */}
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4">
                 <p className="text-xs text-blue-800 font-medium">
-                  💡 Este asistente interpreta tu texto y sugiere cómo mejorarlo. Es independiente
+                  Este asistente interpreta tu texto y sugiere cómo mejorarlo. Es independiente
                   de la clasificación automática: los resultados CIE-10-ES se calculan aparte.
                 </p>
               </div>

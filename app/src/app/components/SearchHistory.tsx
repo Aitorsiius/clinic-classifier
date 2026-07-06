@@ -56,6 +56,12 @@ export function SearchHistory({ isOpen, onClose, onSelectSearch }: Readonly<Sear
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  useEffect(() => {
+    const clearError = () => setError(null);
+    globalThis.addEventListener('auth:logout', clearError);
+    return () => globalThis.removeEventListener('auth:logout', clearError);
+  }, []);
+
   // Bloquear el scroll del body cuando el modal está abierto. Para evitar que
   // el contenido "salte" de tamaño al desaparecer/reaparecer la barra de scroll
   // vertical, se compensa su ancho con un padding-right equivalente y se
@@ -92,7 +98,7 @@ export function SearchHistory({ isOpen, onClose, onSelectSearch }: Readonly<Sear
     try {
       const token = isValidJWT(localStorage.getItem('auth_token')) ? localStorage.getItem('auth_token') : null;
       if (!token) {
-        throw new Error('No authentication token found');
+        throw new Error('No hay token de autenticación');
       }
 
       const response = await fetch(`${API_GATEWAY_URL}/api/search-history`, {
@@ -104,7 +110,7 @@ export function SearchHistory({ isOpen, onClose, onSelectSearch }: Readonly<Sear
       });
 
       if (!response.ok) {
-        throw new Error(`Error: ${response.status}`);
+        throw new Error(`Error del servidor (${response.status})`);
       }
 
       const data: SearchHistoryData = await response.json();

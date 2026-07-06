@@ -58,6 +58,15 @@ export default function AdminPage() {
   const [selectedBlockInfo, setSelectedBlockInfo] = useState<UserBlockInfo | null>(null);
   const [blockInfoLoading, setBlockInfoLoading] = useState(false);
 
+  useEffect(() => {
+    const clearErrors = () => {
+      setError(null);
+      setOperationError(null);
+    };
+    globalThis.addEventListener('auth:logout', clearErrors);
+    return () => globalThis.removeEventListener('auth:logout', clearErrors);
+  }, []);
+
   // Verificar que es admin
   useEffect(() => {
     if (!isAuthenticated || !userData?.admin) {
@@ -77,7 +86,7 @@ export default function AdminPage() {
       setError(null);
       setIsLoading(true);
       if (!token) {
-        throw new Error('No authentication token available');
+        throw new Error('No hay token de autenticación disponible');
       }
       const data = await getUsers(token);
       setUsers(data);
@@ -103,7 +112,7 @@ export default function AdminPage() {
       setOperationError(null);
       setOperationLoading(true);
       if (!token) {
-        throw new Error('No authentication token available');
+        throw new Error('No hay token de autenticación disponible');
       }
       await createUser(token, {
         username,
@@ -133,7 +142,7 @@ export default function AdminPage() {
       setOperationError(null);
       setOperationLoading(true);
       if (!token) {
-        throw new Error('No authentication token available');
+        throw new Error('No hay token de autenticación disponible');
       }
       await updateUserPassword(token, username, { new_password: newPassword });
       // Contabilizar el cambio de contraseña en las estadísticas de la sesión
@@ -158,7 +167,7 @@ export default function AdminPage() {
       setOperationError(null);
       setOperationLoading(true);
       if (!token) {
-        throw new Error('No authentication token available');
+        throw new Error('No hay token de autenticación disponible');
       }
       await updateUserRole(token, username, { admin, audit });
       // Contabilizar el cambio de rol en las estadísticas de la sesión
@@ -183,7 +192,7 @@ export default function AdminPage() {
       setOperationError(null);
       setOperationLoading(true);
       if (!token) {
-        throw new Error('No authentication token available');
+        throw new Error('No hay token de autenticación disponible');
       }
       await deleteUser(token, username);
       // Contabilizar la eliminación de usuario en las estadísticas de la sesión
@@ -230,7 +239,7 @@ export default function AdminPage() {
     setUnblockDialogOpen(true);
 
     if (!token) {
-      setOperationError('No authentication token available');
+      setOperationError('No hay token de autenticación disponible');
       return;
     }
 
@@ -255,7 +264,7 @@ export default function AdminPage() {
       setOperationError(null);
       setOperationLoading(true);
       if (!token) {
-        throw new Error('No authentication token available');
+        throw new Error('No hay token de autenticación disponible');
       }
       await unblockUser(token, username);
       incrementStat('usersUnblocked');

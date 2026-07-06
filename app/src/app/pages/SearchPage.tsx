@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Header } from '../components/Header';
 import { SearchInput } from '../components/SearchInput';
 import { ResultsList } from '../components/ResultsList';
@@ -53,6 +53,12 @@ export default function SearchPage() {
   const { isAuthenticated } = useAuth();
   const [error, setError] = useState<string | null>(null);
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+
+  useEffect(() => {
+    const clearError = () => setError(null);
+    globalThis.addEventListener('auth:logout', clearError);
+    return () => globalThis.removeEventListener('auth:logout', clearError);
+  }, []);
 
   // Usar valores del contexto de sesión
   const searchText = session.searchText;

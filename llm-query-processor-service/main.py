@@ -134,7 +134,7 @@ def call_gemini(prompt: str) -> str:
                 detail="Permiso denegado. Verifica las credenciales de Vertex AI."
             )
         logger.exception("Error al llamar a Vertex AI: %s", e)
-        raise HTTPException(status_code=500, detail="Internal server error")
+        raise HTTPException(status_code=500, detail="Error interno del servidor")
 
 def analyze_query(query: str) -> dict:
     """Analiza la consulta"""

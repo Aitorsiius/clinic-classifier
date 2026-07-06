@@ -42,9 +42,9 @@ ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 # Mensaje genérico para respuestas 5xx: evita filtrar detalles internos.
-INTERNAL_ERROR_DETAIL = "Internal server error"
+INTERNAL_ERROR_DETAIL = "Error interno del servidor"
 # Mensaje genérico para errores de conexión a MongoDB.
-MONGO_CONNECTION_ERROR_DETAIL = "MongoDB connection error"
+MONGO_CONNECTION_ERROR_DETAIL = "Error de conexión con MongoDB"
 
 # ==========================================
 # LOGGING
@@ -370,7 +370,7 @@ async def create_session(request: SessionCreateRequest):
                 created_at=now.isoformat()
             )
         else:
-            raise HTTPException(status_code=500, detail="Failed to create session")
+            raise HTTPException(status_code=500, detail="No se pudo crear la sesión")
     
     except HTTPException:
         raise
@@ -394,10 +394,10 @@ async def close_session(request: SessionCloseRequest):
         session = get_session_by_id(request.session_id)
         
         if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=404, detail="Sesión no encontrada")
         
         if session.get("closed_at") is not None:
-            raise HTTPException(status_code=400, detail="Session already closed")
+            raise HTTPException(status_code=400, detail="La sesión ya está cerrada")
         
         now = datetime.now(timezone.utc)
         created_at = session["created_at"]
@@ -421,7 +421,7 @@ async def close_session(request: SessionCloseRequest):
         )
         
         if update_result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Session not found")
+            raise HTTPException(status_code=404, detail="Sesión no encontrada")
         
         logger.info(f"Sesión cerrada: {sanitize_log(request.session_id)} - Duración: {duration_seconds}s")
         
@@ -535,7 +535,7 @@ async def update_search_ai_analysis(update: AIAnalysisUpdate):
         }, sort=[("timestamp", -1)])
         
         if not search_doc:
-            raise HTTPException(status_code=404, detail="Search record not found")
+            raise HTTPException(status_code=404, detail="Registro de búsqueda no encontrado")
         
         # Extraer campos del ai_analysis
         ai_analysis_data = update.ai_analysis
@@ -560,7 +560,7 @@ async def update_search_ai_analysis(update: AIAnalysisUpdate):
         )
         
         if update_result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Search record not found")
+            raise HTTPException(status_code=404, detail="Registro de búsqueda no encontrado")
         
         logger.info(f"Análisis de IA actualizado para búsqueda: {sanitize_log(update.query)}")
         

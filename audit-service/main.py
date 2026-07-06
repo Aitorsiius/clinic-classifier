@@ -57,8 +57,8 @@ ALLOWED_ORIGINS = [
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-INTERNAL_ERROR_DETAIL = "Internal server error"
-BACKEND_UNAVAILABLE_DETAIL = "Backend service unavailable"
+INTERNAL_ERROR_DETAIL = "Error interno del servidor"
+BACKEND_UNAVAILABLE_DETAIL = "Servicio backend no disponible"
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -129,14 +129,14 @@ def verify_token(authorization: str = Header(None)):
         HTTPException: Si el token es inválido o falta
     """
     if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
+        raise HTTPException(status_code=401, detail="Falta la cabecera de autorización")
     
     try:
         scheme, token = authorization.split()
         if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid auth scheme")
+            raise HTTPException(status_code=401, detail="Esquema de autenticación inválido")
     except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
+        raise HTTPException(status_code=401, detail="Cabecera de autorización inválida")
     
     try:
         with httpx.Client() as client:
@@ -147,15 +147,15 @@ def verify_token(authorization: str = Header(None)):
             )
             
             if response.status_code != 200:
-                raise HTTPException(status_code=401, detail="Invalid token")
+                raise HTTPException(status_code=401, detail="Token inválido")
             
             data = response.json()
             if not data.get("valid"):
-                raise HTTPException(status_code=401, detail="Invalid token")
+                raise HTTPException(status_code=401, detail="Token inválido")
             
             return data.get("email")
     except httpx.RequestError:
-        raise HTTPException(status_code=500, detail="Authentication service unavailable")
+        raise HTTPException(status_code=500, detail="Servicio de autenticación no disponible")
     
 def _build_diagnosis_records(records) -> list[DiagnosisRecord]:
     """Convierte los registros del request a los modelos de dominio."""
@@ -435,7 +435,7 @@ async def audit_record(
             )
         
         if response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail="Audit processing failed")
+            raise HTTPException(status_code=response.status_code, detail="Error al procesar la auditoría")
         
         result = response.json()
         
@@ -444,7 +444,7 @@ async def audit_record(
     except HTTPException:
         raise
     except httpx.RequestError:
-        raise HTTPException(status_code=503, detail="Backend service unavailable")
+        raise HTTPException(status_code=503, detail="Servicio backend no disponible")
     except Exception as e:
         logger.exception("Error interno auditando registro individual: %s", e)
         raise HTTPException(status_code=500, detail=INTERNAL_ERROR_DETAIL)
@@ -479,9 +479,9 @@ async def get_audit_report(
             )
         
         if response.status_code == 404:
-            raise HTTPException(status_code=404, detail="Audit report not found")
+            raise HTTPException(status_code=404, detail="Informe de auditoría no encontrado")
         elif response.status_code != 200:
-            raise HTTPException(status_code=response.status_code, detail="Error fetching report")
+            raise HTTPException(status_code=response.status_code, detail="Error al obtener el informe")
         
         result = response.json()
         return AuditReportResponse(**result)

@@ -75,15 +75,15 @@ ALLOWED_ORIGINS = [
 
 # Mensaje genérico para respuestas 5xx: evita filtrar detalles internos
 # (trazas, rutas, mensajes de excepción) al cliente.
-INTERNAL_ERROR_DETAIL = "Internal server error"
+INTERNAL_ERROR_DETAIL = "Error interno del servidor"
 # Mensajes por defecto al propagar errores del procesador de consultas LLM.
-LLM_PROCESSOR_ERROR_DETAIL = "LLM processor error"
-LLM_PROCESSOR_TIMEOUT_DETAIL = "LLM processor request timeout"
-LLM_PROCESSOR_CONNECT_ERROR_DETAIL = "Cannot connect to LLM processor service"
+LLM_PROCESSOR_ERROR_DETAIL = "Error del procesador LLM"
+LLM_PROCESSOR_TIMEOUT_DETAIL = "Tiempo de espera agotado en la solicitud al procesador LLM"
+LLM_PROCESSOR_CONNECT_ERROR_DETAIL = "No se puede conectar con el servicio de procesador LLM"
 # Mensajes reutilizados en los endpoints administrativos delegados al auth-service.
-AUTH_HEADER_MISSING_DETAIL = "Authorization header missing"
-ADMIN_ACCESS_REQUIRED_DETAIL = "Admin access required"
-AUTH_SERVICE_UNAVAILABLE_DETAIL = "Auth service unavailable"
+AUTH_HEADER_MISSING_DETAIL = "Falta la cabecera de autorización"
+ADMIN_ACCESS_REQUIRED_DETAIL = "Se requieren permisos de administrador"
+AUTH_SERVICE_UNAVAILABLE_DETAIL = "Servicio de autenticación no disponible"
 
 # ==========================================
 # MODELOS PYDANTIC
@@ -140,27 +140,27 @@ def verify_token(token: str) -> dict:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
+        raise HTTPException(status_code=401, detail="El token ha expirado")
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
 def get_current_user(request: Request) -> str:
     """Dependency para obtener el usuario actual desde el token"""
     auth_header = request.headers.get("Authorization")
     if not auth_header:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
+        raise HTTPException(status_code=401, detail="Falta la cabecera de autorización")
     
     try:
         scheme, token = auth_header.split()
         if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid auth scheme")
+            raise HTTPException(status_code=401, detail="Esquema de autenticación inválido")
         payload = verify_token(token)
         username = payload.get("username")
         if not username:
-            raise HTTPException(status_code=401, detail="Invalid token payload")
+            raise HTTPException(status_code=401, detail="Contenido del token inválido")
         return username
     except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
+        raise HTTPException(status_code=401, detail="Cabecera de autorización inválida")
 
 # ==========================================
 # FUNCIONES DE LOGGING
@@ -556,7 +556,7 @@ async def auth_verify(request: dict):
     """
     token = request.get("token")
     if not token:
-        raise HTTPException(status_code=400, detail="Token required")
+        raise HTTPException(status_code=400, detail="Se requiere un token")
     
     try:
         # Verificar el token localmente en el gateway
@@ -599,7 +599,7 @@ async def audit_batch(
     if not request.records:
         raise HTTPException(
             status_code=400,
-            detail="At least one record is required"
+            detail="Se requiere al menos un registro"
         )
     
     try:
@@ -626,7 +626,7 @@ async def audit_batch(
             if response.status_code != 200:
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=response.json().get("detail", "Audit failed")
+                    detail=response.json().get("detail", "Error en la auditoría")
                 )
             
             result = response.json()
@@ -657,12 +657,12 @@ async def audit_batch(
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=504,
-            detail="Audit request timeout"
+            detail="Tiempo de espera agotado en la solicitud de auditoría"
         )
     except httpx.ConnectError:
         raise HTTPException(
             status_code=503,
-            detail="Cannot connect to audit service"
+            detail="No se puede conectar con el servicio de auditoría"
         )
     except HTTPException:
         raise
@@ -684,7 +684,7 @@ async def audit_batch_stream(
     """Endpoint para auditar un lote de diagnósticos con streaming de progreso"""
     
     if not request.records:
-        raise HTTPException(status_code=400, detail="At least one record is required")
+        raise HTTPException(status_code=400, detail="Se requiere al menos un registro")
         
     session_id = session_id or req.headers.get("x-session-id")
     user_id = user_id or req.headers.get("x-user-id")
@@ -748,7 +748,7 @@ async def search_diagnosis(
             if response.status_code != 200:
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail=response.json().get("detail", "Backend error")
+                    detail=response.json().get("detail", "Error del backend")
                 )
             
             result = response.json()
@@ -761,12 +761,12 @@ async def search_diagnosis(
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=504,
-            detail="Backend request timeout"
+            detail="Tiempo de espera agotado en la solicitud al backend"
         )
     except httpx.ConnectError:
         raise HTTPException(
             status_code=503,
-            detail="Cannot connect to backend service"
+            detail="No se puede conectar con el servicio backend"
         )
     except HTTPException:
         raise
@@ -1003,7 +1003,7 @@ async def admin_list_users(request: Request):
         request,
         "GET",
         "/admin/users",
-        error_detail="Error fetching users",
+        error_detail="Error al obtener los usuarios",
         log_label="Error listando usuarios (admin)",
     )
 
@@ -1019,7 +1019,7 @@ async def admin_create_user(request: Request, body: Annotated[dict, Body(...)]):
         request,
         "POST",
         "/admin/users",
-        error_detail="Error creating user",
+        error_detail="Error al crear el usuario",
         log_label="Error creando usuario (admin)",
         body=body,
         forward_session=True,
@@ -1038,7 +1038,7 @@ async def admin_update_user_role(username: str, request: Request, body: Annotate
         request,
         "PUT",
         f"/admin/users/{safe_username}/role",
-        error_detail="Error updating user roles",
+        error_detail="Error al actualizar los roles del usuario",
         log_label="Error actualizando roles de usuario (admin)",
         body=body,
         forward_session=True,
@@ -1057,7 +1057,7 @@ async def admin_change_password(username: str, request: Request, body: Annotated
         request,
         "PUT",
         f"/admin/users/{safe_username}/password",
-        error_detail="Error updating password",
+        error_detail="Error al actualizar la contraseña",
         log_label="Error actualizando contraseña de usuario (admin)",
         body=body,
         forward_session=True,
@@ -1076,7 +1076,7 @@ async def admin_delete_user(username: str, request: Request, user_username: Anno
         request,
         "DELETE",
         f"/admin/users/{safe_username}",
-        error_detail="Error deleting user",
+        error_detail="Error al eliminar el usuario",
         log_label="Error eliminando usuario (admin)",
         forward_session=True,
     )
@@ -1097,7 +1097,7 @@ async def admin_user_block_info(username: str, request: Request):
         request,
         "GET",
         f"/admin/users/{safe_username}/block-info",
-        error_detail="Error fetching block info",
+        error_detail="Error al obtener la información de bloqueo",
         log_label="Error obteniendo información de bloqueo (admin)",
     )
 
@@ -1114,7 +1114,7 @@ async def admin_unblock_user(username: str, request: Request):
         request,
         "POST",
         f"/admin/users/{safe_username}/unblock",
-        error_detail="Error unblocking user",
+        error_detail="Error al desbloquear el usuario",
         log_label="Error desbloqueando usuario (admin)",
         forward_session=True,
     )
@@ -1154,7 +1154,7 @@ async def get_user_search_history(request: Request, limit: int = 100):
             if response.status_code != 200:
                 raise HTTPException(
                     status_code=response.status_code,
-                    detail="Error fetching search history"
+                    detail="Error al obtener el historial de búsquedas"
                 )
             
             return response.json()
@@ -1162,12 +1162,12 @@ async def get_user_search_history(request: Request, limit: int = 100):
     except httpx.TimeoutException:
         raise HTTPException(
             status_code=504,
-            detail="History service request timeout"
+            detail="Tiempo de espera agotado en la solicitud al servicio de historial"
         )
     except httpx.ConnectError:
         raise HTTPException(
             status_code=503,
-            detail="Cannot connect to history service"
+            detail="No se puede conectar con el servicio de historial"
         )
     except HTTPException:
         raise

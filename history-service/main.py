@@ -57,8 +57,8 @@ ALLOWED_ORIGINS = [
     if origin.strip()
 ]
 # Mensaje genérico para respuestas 5xx: evita filtrar detalles internos.
-INTERNAL_ERROR_DETAIL = "Internal server error"
-MONGODB_CONNECTION_ERROR_DETAIL = "MongoDB connection error"
+INTERNAL_ERROR_DETAIL = "Error interno del servidor"
+MONGODB_CONNECTION_ERROR_DETAIL = "Error de conexión con MongoDB"
 
 # ==========================================
 # LOGGING
@@ -137,27 +137,27 @@ def verify_token(token: str) -> dict:
         payload = jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
         return payload
     except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token expired")
+        raise HTTPException(status_code=401, detail="El token ha expirado")
     except jwt.InvalidTokenError:
-        raise HTTPException(status_code=401, detail="Invalid token")
+        raise HTTPException(status_code=401, detail="Token inválido")
 
 def get_user_from_token(authorization: str = Header(None)) -> str:
     """Extrae el username del token JWT"""
     if not authorization:
-        raise HTTPException(status_code=401, detail="Missing authorization header")
+        raise HTTPException(status_code=401, detail="Falta la cabecera de autorización")
     
     try:
         scheme, token = authorization.split()
         if scheme.lower() != "bearer":
-            raise HTTPException(status_code=401, detail="Invalid auth scheme")
+            raise HTTPException(status_code=401, detail="Esquema de autenticación inválido")
         
         payload = verify_token(token)
         username = payload.get("username")
         if not username:
-            raise HTTPException(status_code=401, detail="Invalid token payload")
+            raise HTTPException(status_code=401, detail="Contenido del token inválido")
         return username
     except ValueError:
-        raise HTTPException(status_code=401, detail="Invalid authorization header")
+        raise HTTPException(status_code=401, detail="Cabecera de autorización inválida")
     
 def sanitize_log(data: str) -> str:
     """

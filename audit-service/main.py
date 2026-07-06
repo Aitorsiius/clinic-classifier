@@ -303,6 +303,33 @@ async def health_check():
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 
+async def _emit_audit_stream(http_request: Request, audit_task, progress_queue: asyncio.Queue, top_k: int):
+    """Emite los eventos SSE de una auditoría en curso.
+
+    Va enviando eventos de progreso mientras el hilo de auditoría trabaja y, al
+    terminar, el evento 'complete'. Si el cliente se desconecta, corta sin emitir
+    nada más (el `finally` de quien invoca señaliza la parada al hilo).
+    """
+    # Progreso en tiempo real, vigilando la desconexión del cliente.
+    while not audit_task.done():
+        if await http_request.is_disconnected():
+            return
+        try:
+            progress_event = await asyncio.wait_for(progress_queue.get(), timeout=0.2)
+        except asyncio.TimeoutError:
+            continue
+        yield f"data: {json.dumps(progress_event)}\n\n"
+
+    # Vaciar cualquier evento residual en la cola antes de cerrar.
+    while not progress_queue.empty():
+        yield f"data: {json.dumps(progress_queue.get_nowait())}\n\n"
+
+    # Formatear y enviar el resultado final.
+    report = audit_task.result()
+    result_json = _format_audit_result(report, top_k)
+    yield f"data: {json.dumps({'type': 'complete', 'result': result_json})}\n\n"
+
+
 @app.post("/audit/batch-stream", tags=["Audit"])
 async def audit_batch_stream(
     request: AuditBatchRequest,
@@ -314,10 +341,7 @@ async def audit_batch_stream(
     async def event_generator():
         stop_event = threading.Event()
         try:
-            # 1. Preparar datos usando el helper
             diagnosis_records = _build_diagnosis_records(request.records)
-
-            # 2. Configurar la comunicación asíncrona
             progress_queue = asyncio.Queue()
             loop = asyncio.get_running_loop()
 
@@ -330,9 +354,7 @@ async def audit_batch_stream(
                 }
                 loop.call_soon_threadsafe(progress_queue.put_nowait, event_data)
 
-            # 3. Lanzar la auditoría en segundo plano
-            search_engine = GatewaySearchEngine(API_GATEWAY_URL)
-            auditor = CodeAuditor(search_engine)
+            auditor = CodeAuditor(GatewaySearchEngine(API_GATEWAY_URL))
 
             with ThreadPoolExecutor(max_workers=1) as executor:
                 audit_task = loop.run_in_executor(
@@ -345,34 +367,12 @@ async def audit_batch_stream(
                         should_stop=stop_event.is_set
                     )
                 )
-
                 try:
-                    # 4. Bucle de streaming: emite progreso y vigila si el cliente
-                    #    se desconectó para abortar la auditoría.
-                    cancelled = False
-                    while not audit_task.done():
-                        if await http_request.is_disconnected():
-                            cancelled = True
-                            break
-                        try:
-                            progress_event = await asyncio.wait_for(progress_queue.get(), timeout=0.2)
-                            yield f"data: {json.dumps(progress_event)}\n\n"
-                        except asyncio.TimeoutError:
-                            continue
-
-                    # Cliente desconectado: no enviamos más eventos.
-                    if cancelled:
-                        return
-
-                    # 5. Vaciar cualquier evento residual en la cola antes de cerrar
-                    while not progress_queue.empty():
-                        yield f"data: {json.dumps(progress_queue.get_nowait())}\n\n"
-
-                    # 6. Formatear y enviar resultado final usando el helper
-                    report = audit_task.result()
-                    result_json = _format_audit_result(report, request.top_k or 5)
-                    yield f"data: {json.dumps({'type': 'complete', 'result': result_json})}\n\n"
+                    async for chunk in _emit_audit_stream(http_request, audit_task, progress_queue, request.top_k or 5):
+                        yield chunk
                 finally:
+                    # Señala la parada al hilo ANTES de que el `with` haga
+                    # shutdown(wait=True) y bloquee esperándolo.
                     stop_event.set()
 
         except asyncio.CancelledError:

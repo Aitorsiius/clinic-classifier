@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useMemo, useRef } from 'react';
 
 interface DiagnosisResult {
   score: number;
@@ -84,6 +84,13 @@ interface SessionContextType {
   setAuditStartTime: (ts: number | null) => void;
   auditReport: any;
   setAuditReport: (report: any) => void;
+  // Registra el AbortController de la auditoría en curso para poder cancelarla
+  // más tarde. Vive en el contexto (no en el componente) para sobrevivir a la
+  // navegación entre vistas mientras la auditoría sigue en segundo plano.
+  registerAuditController: (controller: AbortController | null) => void;
+  // Cancela la auditoría en curso: aborta el stream (cierra la conexión con el
+  // servidor) y reinicia el estado de progreso.
+  cancelAudit: () => void;
   // Aviso visual: una auditoría finalizó mientras el usuario estaba en otra vista
   auditNotification: boolean;
   setAuditNotification: (value: boolean) => void;
@@ -135,6 +142,20 @@ export function SessionProvider({ children }: Readonly<{ children: React.ReactNo
     sessionStorage.setItem('session_startedAt', String(now));
     return now;
   });
+
+  const auditAbortRef = useRef<AbortController | null>(null);
+
+  const registerAuditController = (controller: AbortController | null) => {
+    auditAbortRef.current = controller;
+  };
+
+  const cancelAudit = () => {
+    auditAbortRef.current?.abort();
+    auditAbortRef.current = null;
+    setIsProcessing(false);
+    setAuditProgress(0);
+    setAuditStartTime(null);
+  };
 
   // Incrementa en uno el contador de una estadística de la sesión
   const incrementStat = (key: SessionStatKey) => {
@@ -387,6 +408,8 @@ export function SessionProvider({ children }: Readonly<{ children: React.ReactNo
       setAuditStartTime,
       auditReport,
       setAuditReport,
+      registerAuditController,
+      cancelAudit,
       auditNotification,
       setAuditNotification,
       searchNotification,

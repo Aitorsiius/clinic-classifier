@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Button } from './ui/button';
 import { Alert, AlertDescription } from './ui/alert';
-import { Upload, FileText, AlertCircle, CheckCircle2, Zap } from 'lucide-react';
+import { Upload, FileText, AlertCircle, CheckCircle2, Zap, X } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useSession } from '../context/SessionContext';
 import { AuditReportData } from './AuditResults';
@@ -270,6 +270,10 @@ export function AuditPanel({ onAuditStart }: Readonly<AuditPanelProps>) {
     // Marca de inicio para el cronómetro en vivo de la barra de progreso.
     session.setAuditStartTime(Date.now());
 
+    // Controlador para poder cancelar la auditoría
+    const controller = new AbortController();
+    session.registerAuditController(controller);
+
     try {
       // Obtener user_id y session_id del localStorage
       const userId = isValidId(localStorage.getItem('user_id')) ? localStorage.getItem('user_id') : null;
@@ -277,6 +281,7 @@ export function AuditPanel({ onAuditStart }: Readonly<AuditPanelProps>) {
 
       const response = await fetch(`${API_GATEWAY_URL}/api/audit/batch-stream`, {
         method: 'POST',
+        signal: controller.signal,
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
@@ -301,14 +306,31 @@ export function AuditPanel({ onAuditStart }: Readonly<AuditPanelProps>) {
 
       await readAuditStream(reader);
     } catch (err) {
+      // Cancelación voluntaria del usuario: no es un error, no mostrar alerta.
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        return;
+      }
       const errorMessage = err instanceof Error ? err.message : 'Ocurrió un error';
       setError(errorMessage);
     } finally {
-      setIsProcessing(false);
-      // Detener el cronómetro en vivo (los resultados muestran el tiempo final
-      // autoritativo devuelto por el backend).
-      session.setAuditStartTime(null);
+      // Si esta ejecución fue cancelada, `cancelAudit()` ya reinició el estado y
+      // el usuario puede haber lanzado una nueva auditoría. No tocamos el estado
+      // compartido aquí para no pisar esa ejecución nueva (si lo hiciéramos,
+      // `isProcessing` volvería a false y su barra de progreso se congelaría).
+      if (!controller.signal.aborted) {
+        session.registerAuditController(null);
+        setIsProcessing(false);
+        // Detener el cronómetro en vivo (los resultados muestran el tiempo final
+        // autoritativo devuelto por el backend).
+        session.setAuditStartTime(null);
+      }
     }
+  };
+
+  // Cancela la auditoría en curso (aborta el stream y reinicia el progreso).
+  const handleCancel = () => {
+    setError(null);
+    session.cancelAudit();
   };
 
   return (
@@ -507,18 +529,29 @@ export function AuditPanel({ onAuditStart }: Readonly<AuditPanelProps>) {
                 label="Iniciar Auditoría"
               />
             </div>
-            <Button
-              onClick={() => {
-                setCSVData(null);
-                setFileName('');
-                session.setCSVData(null);
-                session.setFileName('');
-              }}
-              variant="outline"
-              disabled={isProcessing}
-            >
-              Limpiar
-            </Button>
+            {isProcessing ? (
+              <Button
+                onClick={handleCancel}
+                variant="destructive"
+                className="h-auto gap-2"
+              >
+                <X className="h-4 w-4" />
+                Cancelar Auditoría
+              </Button>
+            ) : (
+              <Button
+                onClick={() => {
+                  setCSVData(null);
+                  setFileName('');
+                  session.setCSVData(null);
+                  session.setFileName('');
+                }}
+                variant="outline"
+                className="h-auto"
+              >
+                Limpiar
+              </Button>
+            )}
           </motion.div>
         )}
       </CardContent>

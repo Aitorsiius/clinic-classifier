@@ -14,6 +14,7 @@ import {
   Lock,
   ShieldCheck,
   RefreshCw,
+  UserCheck,
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
@@ -271,7 +272,17 @@ export function UsersTable({
               {/* La key fuerza el re-montaje al cambiar de página/filtro para
                   reproducir la animación de desvanecimiento de arriba a abajo */}
               <tbody key={`${page}-${roleFilter}-${statusFilter}-${search}`}>
-                {paginatedUsers.map((user, idx) => (
+                {paginatedUsers.map((user, idx) => {
+                  const isCurrentUser = user.username === currentUsername;
+                  // Prioridad de resaltado: la cuenta propia (azul) manda sobre
+                  // el estado de bloqueo (rojo).
+                  let rowClass = 'border-b border-gray-100 hover:bg-gray-50';
+                  if (isCurrentUser) {
+                    rowClass = 'border-b border-blue-200 bg-blue-50 hover:bg-blue-100';
+                  } else if (user.blocked) {
+                    rowClass = 'border-b border-red-200 bg-red-50 hover:bg-red-100';
+                  }
+                  return (
                   <motion.tr
                     key={user.username}
                     initial={{ opacity: 0, y: -8 }}
@@ -281,15 +292,17 @@ export function UsersTable({
                       delay: Math.min(idx * 0.04, 0.4),
                       ease: 'easeOut',
                     }}
-                    className={
-                      user.blocked
-                        ? 'border-b border-red-200 bg-red-50 hover:bg-red-100'
-                        : 'border-b border-gray-100 hover:bg-gray-50'
-                    }
+                    className={rowClass}
                   >
                     <td className="py-3 px-4">
                       <div className="flex items-center gap-2">
                         <span className="font-medium text-gray-900">{user.username}</span>
+                        {isCurrentUser && (
+                          <Badge className="bg-blue-600 text-white hover:bg-blue-600 gap-1">
+                            <UserCheck className="w-3 h-3" />
+                            Tu cuenta
+                          </Badge>
+                        )}
                         {user.blocked && (
                           <Badge className="bg-red-600 text-white hover:bg-red-600 gap-1">
                             <Lock className="w-3 h-3" />
@@ -297,9 +310,6 @@ export function UsersTable({
                           </Badge>
                         )}
                       </div>
-                      {user.username === currentUsername && (
-                        <div className="text-xs text-blue-600 mt-1">Tu cuenta</div>
-                      )}
                     </td>
                     <td className="py-3 px-4">
                       <div className="flex gap-2">
@@ -326,50 +336,58 @@ export function UsersTable({
                         : 'N/A'}
                     </td>
                     <td className="py-3 px-4">
-                      <div className="flex gap-2 justify-end">
-                        {user.blocked && (
+                      {isCurrentUser ? (
+                        // Sin acciones sobre la propia cuenta: no puedes editar
+                        // tus roles, cambiar tu contraseña ni eliminarte aquí.
+                        <div className="flex justify-end">
+                          <span className="text-xs text-gray-400 italic">Sin acciones disponibles</span>
+                        </div>
+                      ) : (
+                        <div className="flex gap-2 justify-end">
+                          {user.blocked && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => onUnblock(user.username)}
+                              className="gap-1 text-xs text-green-700 border-green-300 hover:text-green-800 hover:bg-green-50"
+                            >
+                              <ShieldCheck className="w-3 h-3" />
+                              Desbloquear
+                            </Button>
+                          )}
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => onUnblock(user.username)}
-                            className="gap-1 text-xs text-green-700 border-green-300 hover:text-green-800 hover:bg-green-50"
+                            onClick={() => onEditRoles(user)}
+                            className="gap-1 text-xs"
                           >
-                            <ShieldCheck className="w-3 h-3" />
-                            Desbloquear
+                            <Edit2 className="w-3 h-3" />
+                            Roles
                           </Button>
-                        )}
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onEditRoles(user)}
-                          className="gap-1 text-xs"
-                        >
-                          <Edit2 className="w-3 h-3" />
-                          Roles
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onChangePassword(user.username)}
-                          className="gap-1 text-xs"
-                        >
-                          <Key className="w-3 h-3" />
-                          Contraseña
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => onDelete(user.username)}
-                          disabled={user.username === currentUsername}
-                          className="gap-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 className="w-3 h-3" />
-                          Eliminar
-                        </Button>
-                      </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onChangePassword(user.username)}
+                            className="gap-1 text-xs"
+                          >
+                            <Key className="w-3 h-3" />
+                            Contraseña
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => onDelete(user.username)}
+                            className="gap-1 text-xs text-red-600 hover:text-red-700 hover:bg-red-50"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                            Eliminar
+                          </Button>
+                        </div>
+                      )}
                     </td>
                   </motion.tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

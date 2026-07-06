@@ -88,7 +88,7 @@ class FakeAuditor:
     def __init__(self, engine):
         pass
 
-    def audit_batch(self, records, top_k=5, progress_callback=None, use_ai=False):
+    def audit_batch(self, records, top_k=5, progress_callback=None, use_ai=False, should_stop=None):
         if progress_callback:
             progress_callback(1, max(1, len(records)))
         return _Report(len(records))

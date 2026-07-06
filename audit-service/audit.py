@@ -323,7 +323,7 @@ class CodeAuditor:
         
         return True
     
-    def audit_batch(self, records: List[DiagnosisRecord], top_k: int = 5, progress_callback=None, use_ai: bool = False) -> AuditReport:
+    def audit_batch(self, records: List[DiagnosisRecord], top_k: int = 5, progress_callback=None, use_ai: bool = False, should_stop=None) -> AuditReport:
         """
         Audita un lote de registros de diagnósticos
 
@@ -332,6 +332,10 @@ class CodeAuditor:
             top_k: Número de resultados a considerar por búsqueda
             progress_callback: Función callback(current, total) para reportar progreso
             use_ai: Si es True, cada búsqueda usa el pipeline de IA.
+            should_stop: Callable opcional que devuelve True cuando se debe abortar
+                la auditoría (p. ej. el cliente canceló). Se comprueba antes de
+                procesar cada registro para detener el hilo cuanto antes y liberar
+                recursos; el informe parcial resultante se descarta.
 
         Returns:
             AuditReport con hallazgos agregados
@@ -345,12 +349,17 @@ class CodeAuditor:
 
         # Procesar cada registro
         for idx, record in enumerate(records):
+            # Parada cooperativa: si el cliente canceló, dejamos de procesar. El
+            # informe parcial no se envía (la conexión ya está cerrada).
+            if should_stop is not None and should_stop():
+                break
+
             finding = self.audit_record(record, top_k=top_k, use_ai=use_ai)
             findings.append(finding)
-            
+
             # Pequeño delay para simular procesamiento realista (50-100ms por registro)
             time.sleep(0.05)
-            
+
             # Llamar callback de progreso si existe
             if progress_callback:
                 progress_callback(idx + 1, len(records))

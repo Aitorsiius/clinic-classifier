@@ -5,9 +5,9 @@ import { ResultsList } from '../components/ResultsList';
 import { Filters } from '../components/Filters';
 import { AIAnalysisPanel } from '../components/AIAnalysisPanel';
 import { SearchHistory } from '../components/SearchHistory';
+import { HistoryClockIcon } from '../components/HistoryClockIcon';
 import { useSession } from '../context/SessionContext';
 import { useAuth } from '../context/AuthContext';
-import { Clock } from 'lucide-react';
 
 export interface DiagnosisResult {
   score: number;
@@ -199,7 +199,7 @@ export default function SearchPage() {
               onClick={() => setIsHistoryOpen(true)}
               className="group flex min-w-[12.5rem] items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 px-8 py-2.5 font-medium text-white shadow-lg shadow-blue-600/25 transition-all duration-200 hover:-translate-y-0.5 hover:from-blue-700 hover:to-indigo-700 hover:shadow-xl hover:shadow-blue-600/30 active:translate-y-0 active:scale-[0.98]"
             >
-              <Clock className="h-5 w-5 transition-transform duration-300 group-hover:-rotate-12" />
+              <HistoryClockIcon className="h-5 w-5" />
               <span>Ver Historial</span>
             </button>
           </div>

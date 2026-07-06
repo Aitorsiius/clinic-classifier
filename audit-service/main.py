@@ -9,7 +9,7 @@ Microservicio responsable de:
 
 import re
 
-from fastapi import FastAPI, HTTPException, Depends, Header
+from fastapi import FastAPI, HTTPException, Depends, Header, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from enum import Enum
 import json
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
 import logging
 from typing import Annotated
@@ -305,24 +306,26 @@ async def health_check():
 @app.post("/audit/batch-stream", tags=["Audit"])
 async def audit_batch_stream(
     request: AuditBatchRequest,
+    http_request: Request,
     current_user: Annotated[str, Depends(verify_token)]
 ):
     """Realiza una auditoría de lote de registros con progreso en tiempo real via SSE"""
-    
+
     async def event_generator():
+        stop_event = threading.Event()
         try:
             # 1. Preparar datos usando el helper
             diagnosis_records = _build_diagnosis_records(request.records)
-            
+
             # 2. Configurar la comunicación asíncrona
             progress_queue = asyncio.Queue()
-            loop = asyncio.get_running_loop() 
-            
+            loop = asyncio.get_running_loop()
+
             def progress_callback(current: int, total: int):
                 event_data = {
-                    'type': 'progress', 
-                    'current': current, 
-                    'total': total, 
+                    'type': 'progress',
+                    'current': current,
+                    'total': total,
                     'percentage': int((current / total) * 100)
                 }
                 loop.call_soon_threadsafe(progress_queue.put_nowait, event_data)
@@ -330,7 +333,7 @@ async def audit_batch_stream(
             # 3. Lanzar la auditoría en segundo plano
             search_engine = GatewaySearchEngine(API_GATEWAY_URL)
             auditor = CodeAuditor(search_engine)
-            
+
             with ThreadPoolExecutor(max_workers=1) as executor:
                 audit_task = loop.run_in_executor(
                     executor,
@@ -338,31 +341,46 @@ async def audit_batch_stream(
                         diagnosis_records,
                         top_k=request.top_k or 5,
                         progress_callback=progress_callback,
-                        use_ai=request.use_ai
+                        use_ai=request.use_ai,
+                        should_stop=stop_event.is_set
                     )
                 )
-                
-                # 4. Bucle de streaming simplificado
-                while not audit_task.done():
-                    try:
-                        progress_event = await asyncio.wait_for(progress_queue.get(), timeout=0.2)
-                        yield f"data: {json.dumps(progress_event)}\n\n"
-                    except asyncio.TimeoutError:
-                        continue
-                
-                # 5. Vaciar cualquier evento residual en la cola antes de cerrar
-                while not progress_queue.empty():
-                    yield f"data: {json.dumps(progress_queue.get_nowait())}\n\n"
-                
-            # 6. Formatear y enviar resultado final usando el helper
-                report = audit_task.result()
-                result_json = _format_audit_result(report, request.top_k or 5)
-                yield f"data: {json.dumps({'type': 'complete', 'result': result_json})}\n\n"
-                
+
+                try:
+                    # 4. Bucle de streaming: emite progreso y vigila si el cliente
+                    #    se desconectó para abortar la auditoría.
+                    cancelled = False
+                    while not audit_task.done():
+                        if await http_request.is_disconnected():
+                            cancelled = True
+                            break
+                        try:
+                            progress_event = await asyncio.wait_for(progress_queue.get(), timeout=0.2)
+                            yield f"data: {json.dumps(progress_event)}\n\n"
+                        except asyncio.TimeoutError:
+                            continue
+
+                    # Cliente desconectado: no enviamos más eventos.
+                    if cancelled:
+                        return
+
+                    # 5. Vaciar cualquier evento residual en la cola antes de cerrar
+                    while not progress_queue.empty():
+                        yield f"data: {json.dumps(progress_queue.get_nowait())}\n\n"
+
+                    # 6. Formatear y enviar resultado final usando el helper
+                    report = audit_task.result()
+                    result_json = _format_audit_result(report, request.top_k or 5)
+                    yield f"data: {json.dumps({'type': 'complete', 'result': result_json})}\n\n"
+                finally:
+                    stop_event.set()
+
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             logger.exception("Error durante el streaming de auditoría: %s", e)
             yield f"data: {json.dumps({'type': 'error', 'message': INTERNAL_ERROR_DETAIL})}\n\n"
-    
+
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 @app.post("/audit/batch", response_model=AuditReportResponse, tags=["Audit"], responses={503: {"description": BACKEND_UNAVAILABLE_DETAIL}, 500: {"description": INTERNAL_ERROR_DETAIL}})

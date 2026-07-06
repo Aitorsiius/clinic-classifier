@@ -188,3 +188,28 @@ html body[data-scroll-locked] {
   margin-right: 0 !important;
   padding-right: 0 !important;
 }
+
+/* Animación de las agujas del reloj del botón "Ver Historial". */
+.clock-hand {
+  transform-box: view-box;
+  transform-origin: 12px 12px;
+  transition: transform 1.4s cubic-bezier(0.45, 0.05, 0.2, 1);
+}
+
+.group:hover .clock-hand--minute {
+  transform: rotate(720deg);
+}
+
+.group:hover .clock-hand--hour {
+  transform: rotate(60deg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .clock-hand {
+    transition: none;
+  }
+  .group:hover .clock-hand--minute,
+  .group:hover .clock-hand--hour {
+    transform: none;
+  }
+}

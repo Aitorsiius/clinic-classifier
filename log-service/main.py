@@ -634,7 +634,7 @@ async def register_audit(audit: AuditRecord):
             return AuditResponse(
                 audit_id="error",
                 session_id=audit.session_id,
-                username=audit.username,
+                user_id=audit.user_id,
                 timestamp=now.isoformat(),
                 status="error"
             )

@@ -781,9 +781,9 @@ async def search_diagnosis(
 @app.post("/search", responses={504: {"description": "Backend request timeout"},
                                 503: {"description": "Cannot connect to backend service"},
                                 500: {"description": "Internal server error"}})
-async def search_diagnosis_alt(request: SearchRequest):
+async def search_diagnosis_alt(req: Request, request: SearchRequest):
     """Alias del endpoint de búsqueda"""
-    return await search_diagnosis(request)
+    return await search_diagnosis(req, request)
 
 # ==========================================
 # ENDPOINTS DEL PROCESADOR DE QUERIES LLM

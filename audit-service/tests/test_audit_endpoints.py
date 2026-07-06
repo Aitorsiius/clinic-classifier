@@ -141,6 +141,44 @@ def test_batch_logs_to_log_service(auth):
     assert resp.status_code == 200
 
 
+def test_batch_httpexception_propagates(auth, monkeypatch):
+    from fastapi import HTTPException
+
+    class A:
+        def __init__(self, engine):
+            pass
+
+        def audit_batch(self, *a, **k):
+            raise HTTPException(status_code=418, detail="teapot")
+
+    monkeypatch.setattr(main, "CodeAuditor", A)
+    assert client.post("/audit/batch", json=_REC).status_code == 418
+
+
+def test_batch_backend_unavailable(auth, monkeypatch):
+    class A:
+        def __init__(self, engine):
+            pass
+
+        def audit_batch(self, *a, **k):
+            raise httpx.RequestError("backend caído")
+
+    monkeypatch.setattr(main, "CodeAuditor", A)
+    assert client.post("/audit/batch", json=_REC).status_code == 503
+
+
+def test_batch_internal_error(auth, monkeypatch):
+    class A:
+        def __init__(self, engine):
+            pass
+
+        def audit_batch(self, *a, **k):
+            raise RuntimeError("boom")
+
+    monkeypatch.setattr(main, "CodeAuditor", A)
+    assert client.post("/audit/batch", json=_REC).status_code == 500
+
+
 # ---------------------------------------------------------------------------
 # /audit/batch-stream (SSE)
 # ---------------------------------------------------------------------------
@@ -153,6 +191,39 @@ def test_batch_stream_success(auth):
 
 def test_batch_stream_requires_auth():
     assert client.post("/audit/batch-stream", json=_REC).status_code == 401
+
+
+class BoomAuditor:
+    """Auditor cuyo audit_batch lanza (para cubrir las ramas de error)."""
+
+    def __init__(self, engine):
+        pass
+
+    def audit_batch(self, records, top_k=5, progress_callback=None, use_ai=False, should_stop=None):
+        raise RuntimeError("fallo en la auditoría")
+
+
+def test_batch_stream_emits_error_event(auth, monkeypatch):
+    # audit_batch lanza en el hilo: el generador emite un evento 'error'.
+    monkeypatch.setattr(main, "CodeAuditor", BoomAuditor)
+    resp = client.post("/audit/batch-stream", json=_REC)
+    assert resp.status_code == 200
+    assert '"type": "error"' in resp.text
+
+
+def test_batch_stream_reraises_cancelled(auth, monkeypatch):
+    # Si el streaming se cancela (cliente desconectado), la CancelledError se
+    # re-lanza tal cual: el stream termina sin cuerpo y SIN evento de error.
+    import asyncio
+
+    async def _cancelling_stream(*a, **k):
+        raise asyncio.CancelledError()
+        yield  # noqa: convierte la corrutina en un generador asíncrono
+
+    monkeypatch.setattr(main, "_emit_audit_stream", _cancelling_stream)
+    resp = client.post("/audit/batch-stream", json=_REC)
+    assert resp.status_code == 200
+    assert '"type": "error"' not in resp.text
 
 
 # ---------------------------------------------------------------------------
@@ -186,6 +257,13 @@ def test_audit_record_backend_unavailable(auth):
     assert resp.status_code == 503
 
 
+def test_audit_record_internal_error(auth):
+    # Respuesta 200 con payload inválido: AuditResult(**result) lanza -> 500.
+    FakeAsyncClient.routes = {"/api/audit/record": FakeResp(200, {"campo": "malo"})}
+    resp = client.post("/audit/record", json={"diagnosis_text": "tos", "assigned_code": "A00.0"})
+    assert resp.status_code == 500
+
+
 # ---------------------------------------------------------------------------
 # /audit/{audit_id}
 # ---------------------------------------------------------------------------
@@ -215,3 +293,17 @@ def test_get_audit_report_backend_unavailable(auth):
     FakeAsyncClient.routes = {"/api/audit/x": httpx.RequestError("down")}
     resp = client.get("/audit/x")
     assert resp.status_code == 503
+
+
+def test_get_audit_report_upstream_error(auth):
+    # Estado distinto de 200/404 desde el gateway -> se propaga el código.
+    FakeAsyncClient.routes = {"/api/audit/x": FakeResp(500, {})}
+    resp = client.get("/audit/x")
+    assert resp.status_code == 500
+
+
+def test_get_audit_report_internal_error(auth):
+    # 200 con payload inválido: AuditReportResponse(**result) lanza -> 500.
+    FakeAsyncClient.routes = {"/api/audit/x": FakeResp(200, {"campo": "malo"})}
+    resp = client.get("/audit/x")
+    assert resp.status_code == 500

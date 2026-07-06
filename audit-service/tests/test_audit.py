@@ -168,6 +168,30 @@ def test_audit_batch_aggregates_and_reports_progress():
     assert "findings" in as_dict
 
 
+def test_audit_batch_without_progress_callback():
+    # Sin progress_callback: cubre la rama en la que NO se reporta progreso.
+    engine = FakeSearchEngine([_result("A00.0", 0.95)])
+    auditor = CodeAuditor(engine)
+    records = [DiagnosisRecord(diagnosis_text="x", assigned_code="A00.0", patient_id="p1")]
+    report = auditor.audit_batch(records, top_k=5)
+    assert report.total_records == 1
+    assert report.total_correct == 1
+
+
+def test_audit_batch_should_stop_breaks_early():
+    # should_stop devuelve True antes del primer registro: corta sin procesar nada.
+    engine = FakeSearchEngine([_result("A00.0", 0.95)])
+    auditor = CodeAuditor(engine)
+    records = [
+        DiagnosisRecord(diagnosis_text="x", assigned_code="A00.0", patient_id="p1"),
+        DiagnosisRecord(diagnosis_text="y", assigned_code="Z99", patient_id="p2"),
+    ]
+    report = auditor.audit_batch(records, should_stop=lambda: True)
+    assert report.total_records == 2  # total = len(records)
+    assert len(report.findings) == 0  # no se procesó ninguno
+    assert report.conformity_percentage == 0.0
+
+
 # ----------------------------------------------------------------------------
 # GatewaySearchEngine (httpx simulado)
 # ----------------------------------------------------------------------------

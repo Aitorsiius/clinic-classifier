@@ -106,7 +106,7 @@ export function AuditResults({ report }: Readonly<AuditResultsProps>) {
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `audit-report-${report.audit_id}.json`;
+    link.download = `${report.audit_id}.json`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -125,7 +125,7 @@ export function AuditResults({ report }: Readonly<AuditResultsProps>) {
     const url = URL.createObjectURL(dataBlob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `reporte-auditoria-${report.audit_id}.csv`;
+    link.download = `${report.audit_id}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();

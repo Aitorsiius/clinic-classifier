@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="app/public/chinchilla.png" alt="clinic-classifier logo" width="170" />
+  <img src="app/public/chinchilla-no-bg.png" alt="clinic-classifier logo" width="170" />
 </p>
 
 <h1 align="center">clinic-classifier</h1>
